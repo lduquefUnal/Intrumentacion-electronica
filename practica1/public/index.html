@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Monitor de Nivel de Agua</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <header class="banner">
+    <div class="branding">
+      <img src="logo.png" alt="Logo" class="logo">
+      <h1>SISTEMA PID</h1>
+      <h2>Instrumentación Virtual</h2>
+      <h3>2025-01</h3>
+    </div>
+    <div class="command-container">
+      <h3>Enviar Comando</h3>
+      <div class="input-group">
+        <input type="text" id="commandInput" placeholder="Ej: SP=5.5" />
+        <button id="sendBtn">Enviar</button>
+      </div>
+      <div id="statusDiv" class="status-message">Conectado al servidor</div>
+      <div id="controls">
+        <button id="pauseBtn">Pausa</button>
+        <button id="resumeBtn" disabled>Continuar</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="dashboard">
+    <div class="chart-container">
+      <canvas id="chart1"></canvas>
+    </div>
+
+    <div class="tank-visualizer">
+      <div class="tank-header">
+        <p>Nivel de Agua</p>
+        <p><span id="current-level">---</span> cm</p>
+      </div>
+      <div class="tank-body">
+        <div class="tank-scale">
+          <div class="scale-mark" style="bottom: 90%;">8 cm</div>
+          <div class="scale-mark" style="bottom: 75%;">6 cm</div>
+          <div class="scale-mark" style="bottom: 50%;">4 cm</div>
+          <div class="scale-mark" style="bottom: 25%;">2 cm</div>
+          <div class="scale-mark" style="bottom: 0%;">0 cm</div>
+        </div>
+        <div id="water-level-tank" class="water-level"></div>
+      </div>
+    </div>
+  </main>
+  
+  <div id="liveValues" style="text-align: center; margin-top: 10px;">
+    <p><strong>Error:</strong> <span id="errorDisplay">---</span> %</p>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

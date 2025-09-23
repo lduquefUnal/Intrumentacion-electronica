@@ -1,0 +1,241 @@
+#include "driver/adc.h"
+#include "esp_adc_cal.h"
+#include "driver/gptimer.h"
+#include "driver/ledc.h"
+
+#define NUM_DATOS 10
+// Parámetros del sensor de nivel y la altura máxima
+#define MAX_VOLTAGE 3.3f // 3.3V
+#define MAX_HEIGHT_CM 10.9f // 10 cm
+
+// ————— Pines y canales —————
+static const adc1_channel_t ADC_CHANNEL  = ADC1_CHANNEL_4;  // GPIO32 para el sensor de nivel
+const int pwmPin = 25;                                      // PWM para la bomba
+
+// ————— Parámetros PWM —————
+volatile float freqPWM   = 1000.0f;  // Frecuencia en Hz para la bomba
+volatile float dutyCycle = 20.0f;    // % (ciclo de trabajo mínimo)
+
+const ledc_timer_t     PWM_TIMER      = LEDC_TIMER_0;
+const ledc_channel_t   PWM_CHANNEL    = LEDC_CHANNEL_0;
+const ledc_timer_bit_t PWM_RESOLUTION = LEDC_TIMER_10_BIT; // Más resolución para la bomba
+
+// ————— PID —————
+float setPoint    = 5.0f; // Altura objetivo en cm
+float Kp = 10.0f, Ki = 0.8f, Kd = 1.0f; // Parámetros ajustados
+char linea[512];
+int idx = 0;
+
+// ————— Muestreo con GPTimer —————
+volatile uint64_t    t_micros      = 0;
+volatile bool        nuevaMuestra  = false;
+gptimer_handle_t     gptimer       = NULL;
+portMUX_TYPE         timerMux      = portMUX_INITIALIZER_UNLOCKED;
+
+#define N 50
+static float errBuf[N] = {0};
+static int   bufIdx   = 0;
+static float sumErr   = 0;
+TaskHandle_t taskHandle = NULL;
+
+// ————— Calibración ADC —————
+static const uint32_t DEFAULT_VREF = 1100; // Calibración VREF típica
+static esp_adc_cal_characteristics_t adc_chars;
+
+// ————— Prototipos —————
+bool IRAM_ATTR onTimer(gptimer_handle_t, const gptimer_alarm_event_data_t*, void*);
+void inicializarPWM();
+void actualizarPWM();
+void procesarComando(const String &cmd);
+float calcularPID(float measurement, float dt);
+void resetIntegral();
+void taskControl(void * param);
+
+void taskControl(void *param) {
+  while (true) {
+    // --- Leer y calibrar ADC del sensor de nivel (GPIO32) ---
+    uint32_t rawADC = adc1_get_raw(ADC_CHANNEL);
+    uint32_t mV = esp_adc_cal_raw_to_voltage(rawADC, &adc_chars);
+    float    adcVoltage = mV / 1000.0f;
+
+    // Convertir voltaje a altura en cm
+    float currentHeight = (adcVoltage / MAX_VOLTAGE) * MAX_HEIGHT_CM;
+
+    float dt = 0.001f; // 1 ms fijo
+    float error = setPoint - currentHeight;
+    float pidOut = calcularPID(currentHeight, dt);
+
+    // Lógica de control de la bomba
+    if (currentHeight < setPoint) {
+      // Necesita más agua, la bomba debe estar encendida
+      // Aplicar el ciclo de trabajo del PID, asegurando un mínimo del 20%
+      float newDutyCycle = constrain(pidOut, 0.0f, 100.0f);
+      dutyCycle = (newDutyCycle > 0.0f) ? max(newDutyCycle, 20.0f) : 0.0f;
+    } else {
+      // Nivel de agua suficiente, apagar la bomba
+      dutyCycle = 0.0f;
+      // Reiniciar el término integral para evitar el windup
+      resetIntegral();
+    }
+
+    actualizarPWM();
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+    // Impresión de datos para depuración
+    static int count = 0;
+    idx += snprintf(linea + idx, sizeof(linea) - idx,
+                    "%.2f,%.2f,%.2f,%.2f%s",
+                    currentHeight, adcVoltage, error, setPoint,
+                    (count + 1 == NUM_DATOS) ? "\n" : ";");
+
+    count++;
+
+    if (count == NUM_DATOS) {
+      Serial.print(linea);
+      idx = 0;
+      count = 0;
+    }
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  while (!Serial);
+
+  // --- Configurar ADC con driver-ng ---
+  adc1_config_width(ADC_WIDTH_BIT_12);
+  adc1_config_channel_atten(ADC_CHANNEL,  ADC_ATTEN_DB_11);
+  esp_adc_cal_characterize(ADC_UNIT_1,
+                           ADC_ATTEN_DB_11,
+                           ADC_WIDTH_BIT_12,
+                           DEFAULT_VREF,
+                           &adc_chars);
+
+  // --- PWM y timer ---
+  inicializarPWM();
+  actualizarPWM();
+  xTaskCreatePinnedToCore(taskControl, "taskControl", 4096, NULL, 2, &taskHandle, 0);
+
+  Serial.println("Sistema de control de nivel listo.");
+  Serial.println("Envie comandos: FP=valor DC=valor KP=valor KI=valor KD=valor SP=valor");
+}
+
+void loop() {
+  // 1) Procesar comandos seriales
+  if (Serial.available()) {
+    String cmd = Serial.readStringUntil('\n');
+    cmd.trim();
+    procesarComando(cmd);
+  }
+}
+
+float calcularPID(float measurement, float dt) {
+  // 1) Error
+  float error = setPoint - measurement;
+
+  // 2) Integral en ventana móvil
+  sumErr -= errBuf[bufIdx];
+  errBuf[bufIdx] = error * dt;
+  sumErr += errBuf[bufIdx];
+  bufIdx = (bufIdx + 1) % N;
+  float integralTerm = Ki * sumErr;
+
+  // 3) Derivada con filtro exponencial
+  static float prevMeas = measurement;
+  static float derivFilt = 0.0f;
+  const float alpha = 0.01f;
+  float derivRaw = -(measurement - prevMeas) / dt;
+  derivFilt = alpha * derivRaw + (1 - alpha) * derivFilt;
+  prevMeas = measurement;
+  float derivativeTerm = Kd * derivFilt;
+
+  // 4) Salida PID
+  float output = Kp * error
+               + integralTerm
+               + derivativeTerm;
+
+  // 5) Saturar la salida
+  float outClamped = constrain(output, 0.0f, 100.0f);
+  return outClamped;
+}
+
+void inicializarPWM() {
+  // Configura timer LEDC
+  ledc_timer_config_t tcfg = {
+    .speed_mode       = LEDC_HIGH_SPEED_MODE,
+    .duty_resolution  = PWM_RESOLUTION,
+    .timer_num        = PWM_TIMER,
+    .freq_hz          = (uint32_t)freqPWM,
+    .clk_cfg          = LEDC_AUTO_CLK
+  };
+  ledc_timer_config(&tcfg);
+
+  // Configura canal LEDC
+  ledc_channel_config_t ccfg = {
+    .gpio_num       = pwmPin,
+    .speed_mode     = LEDC_HIGH_SPEED_MODE,
+    .channel        = PWM_CHANNEL,
+    .intr_type      = LEDC_INTR_DISABLE,
+    .timer_sel      = PWM_TIMER,
+    .duty           = 0,
+    .hpoint         = 0
+  };
+  ledc_channel_config(&ccfg);
+
+  // Configurar GPTimer a 1 MHz para 1 ms de muestreo
+  gptimer_config_t gcfg = {
+    .clk_src      = GPTIMER_CLK_SRC_DEFAULT,
+    .direction    = GPTIMER_COUNT_UP,
+    .resolution_hz = 1'000'000
+  };
+  gptimer_new_timer(&gcfg, &gptimer);
+  gptimer_alarm_config_t aconf = {
+    .alarm_count = 100, // 1 ms
+    .reload_count = 0,
+    .flags = { .auto_reload_on_alarm = true }
+  };
+  gptimer_set_alarm_action(gptimer, &aconf);
+  gptimer_event_callbacks_t cbs = { .on_alarm = onTimer };
+  gptimer_register_event_callbacks(gptimer, &cbs, NULL);
+  gptimer_enable(gptimer);
+  gptimer_start(gptimer);
+}
+
+void actualizarPWM() {
+  portENTER_CRITICAL(&timerMux);
+    uint32_t duty = (uint32_t)((dutyCycle/100.0f)*((1<<PWM_RESOLUTION)-1));
+    if (ledc_get_freq(LEDC_HIGH_SPEED_MODE, PWM_TIMER) != (uint32_t)freqPWM)
+      ledc_set_freq(LEDC_HIGH_SPEED_MODE, PWM_TIMER, (uint32_t)freqPWM);
+    ledc_set_duty(LEDC_HIGH_SPEED_MODE, PWM_CHANNEL, duty);
+    ledc_update_duty(LEDC_HIGH_SPEED_MODE, PWM_CHANNEL);
+  portEXIT_CRITICAL(&timerMux);
+}
+
+void procesarComando(const String &cmd) {
+  int idx = cmd.indexOf('=');
+  if (idx < 0) { Serial.println("ERROR"); return; }
+  String p = cmd.substring(0,idx), v = cmd.substring(idx+1);
+  float  val = v.toFloat();
+  
+  portENTER_CRITICAL(&timerMux);
+    if      (p.equalsIgnoreCase("FP")) freqPWM   = val, actualizarPWM();
+    else if (p.equalsIgnoreCase("DC")) dutyCycle = val, actualizarPWM();
+    else if (p.equalsIgnoreCase("KP")) Kp        = val;
+    else if (p.equalsIgnoreCase("KI")) Ki        = val;
+    else if (p.equalsIgnoreCase("KD")) Kd        = val;
+    else if (p.equalsIgnoreCase("SP")) setPoint  = val;
+  portEXIT_CRITICAL(&timerMux);
+  Serial.println("OK");
+}
+
+bool IRAM_ATTR onTimer(gptimer_handle_t, const gptimer_alarm_event_data_t*, void*) {
+  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+  vTaskNotifyGiveFromISR(taskHandle, &xHigherPriorityTaskWoken);
+  return xHigherPriorityTaskWoken == pdTRUE;
+}
+
+void resetIntegral() {
+  for (int i = 0; i < N; ++i) errBuf[i] = 0.0f;
+  bufIdx = 0;
+  sumErr = 0.0f;
+}
