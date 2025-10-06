@@ -1,38 +1,42 @@
+const socket = io();
 document.addEventListener("DOMContentLoaded", function () {
-  const socket = io();
-  const commandInput = document.getElementById('commandInput');
+  // ...existing code...
   const sendBtn = document.getElementById('sendBtn');
   const pauseBtn = document.getElementById('pauseBtn');
   const resumeBtn = document.getElementById('resumeBtn');
   const statusDiv = document.getElementById('statusDiv');
   const errorDisplay = document.getElementById('errorDisplay');
-  const waterLevelTank = document.getElementById('water-level-tank'); // Nuevo elemento para el tanque
-
+  const waterLevelTank = document.getElementById('water-level-tank');
+  const currentLevelEl = document.getElementById('current-level');
+  const portSelector = document.getElementById('portSelector');
+  const connectBtn = document.getElementById('connectBtn');
+  const statusLed = document.getElementById('statusLed');
+  const statusMsg = document.getElementById('statusMsg');
+  const commandSelect = document.getElementById('commandSelect');
+  const valueInput = document.getElementById('valueInput');
   let isPaused = false;
-  let setPoint = 0.0; // Cambiado para el nivel de agua
+  let setPoint = 0.0;
   let error = 0.0;
   let globalTime = 0;
 
   // Ventana de tiempo y muestreo
   const sampleInterval = 1;
   const chartWindow = 300;
-  const chartStep = 10;
+  const chartStep = 1000 / 30;
   const maxPoints = Math.ceil(chartWindow / sampleInterval);
 
-  // Definición de gráficos con rangos de eje Y específicos
   const chartDefs = [
     {
       id: 'chart1',
-      label: 'Nivel del Agua (cm)', // Etiqueta para el gráfico histórico
+      label: 'Nivel del Agua (cm)',
       color: 'blue',
-      yRange: { min: 0, max: 8 } // Rango para el nivel de agua (ajusta si es necesario)
+      yRange: { min: 0, max: 12 }
     }
   ];
 
   const charts = {};
-  const dataBuffer = []; // Un solo buffer para el nivel de agua
+  const dataBuffer = [];
 
-  // Botones pausa/reanudar
   pauseBtn.addEventListener('click', () => {
     isPaused = true;
     pauseBtn.disabled = true;
@@ -44,7 +48,6 @@ document.addEventListener("DOMContentLoaded", function () {
     resumeBtn.disabled = true;
   });
 
-  // Generador de configuración de cada gráfico
   const chartConfig = (def) => ({
     type: 'line',
     data: {
@@ -59,7 +62,6 @@ document.addEventListener("DOMContentLoaded", function () {
           showLine: true,
           borderWidth: 1
         },
-        // Mantiene el SetPoint si lo necesitas en tu gráfica
         ...(def.id === 'chart1' ? [{
           label: 'SetPoint',
           borderColor: 'green',
@@ -92,8 +94,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   });
 
-  // Inicializar gráficos
-  chartDefs.forEach((def, i) => {
+  chartDefs.forEach((def) => {
     const canvas = document.getElementById(def.id);
     if (canvas) {
       const ctx = canvas.getContext('2d');
@@ -101,45 +102,65 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   });
 
-  // Función para actualizar la visualización del tanque
   function updateTank(level) {
-    if (waterLevelTank) {
-      const maxHeight = 8; // Altura máxima del tanque en cm, debe coincidir con el yRange
-      const percentage = (level / maxHeight) * 100;
-      waterLevelTank.style.height = `${Math.min(100, percentage)}%`; // Limita al 100%
-      waterLevelTank.style.backgroundColor = 'blue'; // Color del líquido
-    }
+     if (waterLevelTank) {
+    // tomar el máximo de la escala Y del chart si está disponible, si no usar 12
+    const chart = charts['chart1'];
+    const chartYMax = chart && chart.options && chart.options.scales && chart.options.scales.y && typeof chart.options.scales.y.max === 'number'
+      ? chart.options.scales.y.max
+      : 12;
+
+    const val = Number(level);
+    const percentage = isNaN(val) ? 0 : (val / chartYMax) * 100;
+    waterLevelTank.style.height = `${Math.min(100, Math.max(0, percentage))}%`;
+    waterLevelTank.style.backgroundColor = 'blue';
+  }
+  if (currentLevelEl) {
+    const v = Number(level);
+    currentLevelEl.textContent = isNaN(v) ? '---' : v.toFixed(2);
+  }
   }
 
-  // Recibir datos serie
-  socket.on('serialData', (line) => {
-    // La línea recibida ahora debe ser algo como: "4.5,7.0;4.6,7.0;..."
-    const dataPoints = line.trim().split(';');
+  // Nuevo: manejar ambos formatos: array de objetos (JSON) o string legacy
+  socket.on('serialData', (payload) => {
+    // Si el servidor ya envía un array de objetos
+    if (Array.isArray(payload)) {
+      for (const obj of payload) {
+        const level = parseFloat(obj.CH);
+        const currentSetPoint = parseFloat(obj.SP);
+        const errVal = parseFloat(obj.err);
 
-    // Procesar cada punto de datos del lote
-    for (const point of dataPoints) {
-      if (point) {
+        if (!isNaN(level)) dataBuffer.push(level);
+        if (!isNaN(currentSetPoint)) setPoint = currentSetPoint;
+        if (!isNaN(errVal)) error = errVal;
+
+        updateTank(level);
+      }
+      return;
+    }
+
+    // Si llega legacy como string "v,sp;v2,sp2;..."
+    if (typeof payload === 'string') {
+      const dataPoints = payload.trim().split(';');
+      for (const point of dataPoints) {
+        if (!point) continue;
         const values = point.split(',');
-
-        // Asume que el ESP32 envía 2 valores: nivel_agua, setPoint
         if (values.length >= 2) {
           const level = parseFloat(values[0]);
           const currentSetPoint = parseFloat(values[1]);
-
-          // Añadir el dato al buffer de la gráfica histórica
-          if (!isNaN(level)) {
-            dataBuffer.push(level);
-          }
-
-          // Actualizar la visualización del tanque y el SetPoint
+          if (!isNaN(level)) dataBuffer.push(level);
+          if (!isNaN(currentSetPoint)) setPoint = currentSetPoint;
           updateTank(level);
-          setPoint = currentSetPoint;
         }
       }
     }
   });
 
-  // Estado de comandos
+  socket.on('serialLine', (line) => {
+    // opcional: mostrar/guardar línea cruda
+    // console.log('raw:', line);
+  });
+
   socket.on('commandResponse', (response) => {
     statusDiv.textContent = response;
     const isError = response.toLowerCase().startsWith('error');
@@ -152,7 +173,6 @@ document.addEventListener("DOMContentLoaded", function () {
     }, 3000);
   });
 
-  // Actualizar gráficos
   function updateCharts() {
     if (isPaused) {
       setTimeout(updateCharts, chartStep);
@@ -166,28 +186,23 @@ document.addEventListener("DOMContentLoaded", function () {
     if (chart) {
       const dataset = chart.data.datasets[0];
 
-      // Asigna un tiempo secuencial a cada nuevo dato del buffer
       dataBuffer.forEach(val => {
         dataset.data.push({ x: time, y: val });
         time += sampleInterval;
       });
 
-      // Limpia el buffer después de usar los datos
-      dataBuffer.length = 0; // Método más eficiente
+      dataBuffer.length = 0;
 
-      // Elimina los puntos viejos
       while (dataset.data.length > maxPoints) {
         dataset.data.shift();
       }
 
-      // Actualiza la línea del SetPoint
       const setpointDataset = chart.data.datasets[1];
       setpointDataset.data = [
         { x: time - chartWindow, y: setPoint },
         { x: time, y: setPoint }
       ];
 
-      // Mueve la ventana del eje X
       chart.options.scales.x.min = time - chartWindow;
       chart.options.scales.x.max = time;
 
@@ -196,35 +211,85 @@ document.addEventListener("DOMContentLoaded", function () {
 
     globalTime = time;
 
-    // Actualiza el texto de error (si tu ESP32 aún lo envía)
-    errorDisplay.textContent = error.toFixed(2);
+    errorDisplay.textContent = isNaN(error) ? '---' : error.toFixed(2);
 
     const elapsed = performance.now() - start;
     setTimeout(updateCharts, Math.max(0, chartStep - elapsed));
   }
 
-  // Envío de comandos
+  // Envío de comandos (usa commandSelect y valueInput definidos arriba)
   function sendCommand() {
-    const cmd = commandInput.value.trim();
-    if (!cmd) return;
-    if (/^(FP|DC|AC|AM|SP|KP|KI|KD)=\d+(\.\d+)?$/i.test(cmd)) {
-      socket.emit('sendCommand', cmd);
-      commandInput.value = '';
-      statusDiv.textContent = `Enviando: ${cmd}`;
+    if (!commandSelect) return;
+    const cmdCode = commandSelect.value;
+    const rawVal = valueInput ? String(valueInput.value).trim() : '';
+    if (cmdCode === 'CUSTOM') {
+      if (!rawVal) {
+        statusDiv.textContent = 'Ingrese comando personalizado en el valor';
+        statusDiv.style.color = 'red';
+        return;
+      }
+      socket.emit('sendCommand', rawVal);
+      statusDiv.textContent = `Enviando personalizado: ${rawVal}`;
       statusDiv.style.color = 'blue';
-    } else {
-      statusDiv.textContent = 'Formato inválido. Use: FP=1000, DC=100, etc.';
-      statusDiv.style.color = 'red';
+      return;
     }
-  }
-  sendBtn.addEventListener('click', sendCommand);
-  commandInput.addEventListener('keypress', e => {
-    if (e.key === 'Enter') sendCommand();
-  });
 
-  // Conexión / desconexión
+    if (!rawVal) {
+      statusDiv.textContent = 'Ingrese un valor para el comando seleccionado';
+      statusDiv.style.color = 'red';
+      return;
+    }
+
+    if (!/^-?\d+(\.\d+)?$/.test(rawVal)) {
+      statusDiv.textContent = 'Valor inválido (use número)';
+      statusDiv.style.color = 'red';
+      return;
+    }
+
+    const cmd = `${cmdCode}=${rawVal}`;
+    socket.emit('sendCommand', cmd);
+    statusDiv.textContent = `Enviando: ${cmd}`;
+    statusDiv.style.color = 'blue';
+  }
+  if (sendBtn) sendBtn.addEventListener('click', sendCommand);
+  if (valueInput) valueInput.addEventListener('keypress', e => { if (e.key === 'Enter') sendCommand(); });
+
   socket.on('connect', () => { statusDiv.textContent = 'Conectado al servidor'; statusDiv.style.color = 'green'; statusDiv.style.backgroundColor = '#e8f5e9'; });
   socket.on('disconnect', () => { statusDiv.textContent = 'Desconectado del servidor'; statusDiv.style.color = 'red'; statusDiv.style.backgroundColor = '#ffebee'; });
+
+  // Manejo del selector de puertos y estado de conexión (ahora dentro DOMContentLoaded)
+  function setStatus(connected,msg) {
+    statusLed.style.background = connected ? 'green' : 'red';
+    statusMsg.textContent = msg;
+  }
+
+  socket.on('portsList', (ports) => {
+    portSelector.innerHTML = '';
+    ports.forEach(port=> {
+      const opt = document.createElement('option');
+      opt.value = port;
+      opt.textContent = port;
+      portSelector.appendChild(opt);
+    });
+  });
+
+  connectBtn.addEventListener('click', () => {
+    const selectedPort = portSelector.value;
+    if (selectedPort) {
+      socket.emit('connectPort', selectedPort);
+      setStatus(false,'Conectando...');
+    }
+  });
+
+  socket.on('statusUpdate', (msg) => {
+    if (msg.startsWith('Conectado')) {
+      setStatus(true,msg);
+    } else{
+      setStatus(false,msg);
+    }
+  });
+
+  setStatus(false,'Desconectado');
 
   // Iniciar bucle de actualización
   updateCharts();

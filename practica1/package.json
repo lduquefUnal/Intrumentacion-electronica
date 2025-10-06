@@ -1,7 +1,6 @@
 {
   "name": "practica1",
   "version": "1.0.0",
-  "description": "",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -13,6 +12,7 @@
   "dependencies": {
     "express": "^5.1.0",
     "serialport": "^12.0.0",
-    "socket.io": "^4.7.5"
-  }
+    "socket.io": "^4.8.1"
+  },
+  "description": ""
 }

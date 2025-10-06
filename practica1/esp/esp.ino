@@ -5,23 +5,29 @@
 
 #define NUM_DATOS 10
 // Parámetros del sensor de nivel y la altura máxima
-#define MAX_VOLTAGE 3.3f // 3.3V
-#define MAX_HEIGHT_CM 10.9f // 10 cm
+volatile  float VMIN_V = 120.0f; // 120 mV = 0 cm
+volatile  float VMAX_V = 900.0f; // 1200 mV = 10.9 cm por defecto
+volatile float adcOffset_mV = -30.0f;  // sumar (mV)
+volatile float adcScale     = 1.0f;  // multiplicar
+// Alturas configurables (se pueden cambiar por comando)
+volatile float minHeightCm = 0.0f;
+volatile float maxHeightCm = 10.0f;
+
 
 // ————— Pines y canales —————
 static const adc1_channel_t ADC_CHANNEL  = ADC1_CHANNEL_4;  // GPIO32 para el sensor de nivel
 const int pwmPin = 25;                                      // PWM para la bomba
 
 // ————— Parámetros PWM —————
-volatile float freqPWM   = 1000.0f;  // Frecuencia en Hz para la bomba
-volatile float dutyCycle = 20.0f;    // % (ciclo de trabajo mínimo)
+volatile float freqPWM   = 500.0f;  // Frecuencia en Hz para la bomba
+volatile float dutyCycle = 60.0f;    // % (ciclo de trabajo mínimo)
 
 const ledc_timer_t     PWM_TIMER      = LEDC_TIMER_0;
 const ledc_channel_t   PWM_CHANNEL    = LEDC_CHANNEL_0;
 const ledc_timer_bit_t PWM_RESOLUTION = LEDC_TIMER_10_BIT; // Más resolución para la bomba
 
 // ————— PID —————
-float setPoint    = 5.0f; // Altura objetivo en cm
+float setPoint    = 2.0f; // Altura objetivo en cm
 float Kp = 10.0f, Ki = 0.8f, Kd = 1.0f; // Parámetros ajustados
 char linea[512];
 int idx = 0;
@@ -31,7 +37,7 @@ volatile uint64_t    t_micros      = 0;
 volatile bool        nuevaMuestra  = false;
 gptimer_handle_t     gptimer       = NULL;
 portMUX_TYPE         timerMux      = portMUX_INITIALIZER_UNLOCKED;
-
+const uint32_t SAMPLE_PERIOD_MS = 10;
 #define N 50
 static float errBuf[N] = {0};
 static int   bufIdx   = 0;
@@ -56,10 +62,15 @@ void taskControl(void *param) {
     // --- Leer y calibrar ADC del sensor de nivel (GPIO32) ---
     uint32_t rawADC = adc1_get_raw(ADC_CHANNEL);
     uint32_t mV = esp_adc_cal_raw_to_voltage(rawADC, &adc_chars);
-    float    adcVoltage = mV / 1000.0f;
+    float mV_corr = (float)mV * adcScale + adcOffset_mV; // usar mV, no mV_raw
+    float adc_mV = mV_corr;      
 
     // Convertir voltaje a altura en cm
-    float currentHeight = (adcVoltage / MAX_VOLTAGE) * MAX_HEIGHT_CM;
+    float norm = (adc_mV - VMIN_V) / (VMAX_V - VMIN_V);
+    if (norm < 0.0f) norm = 0.0f;
+    if (norm > 1.0f) norm = 1.0f;
+    float currentHeight = minHeightCm + norm * (maxHeightCm - minHeightCm);
+
 
     float dt = 0.001f; // 1 ms fijo
     float error = setPoint - currentHeight;
@@ -81,12 +92,17 @@ void taskControl(void *param) {
     actualizarPWM();
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
-    // Impresión de datos para depuración
     static int count = 0;
+    if (count == 0) {
+      // abrir array JSON al inicio del batch
+      idx += snprintf(linea + idx, sizeof(linea) - idx, "[");
+    }
+
+    // objeto JSON por muestra
     idx += snprintf(linea + idx, sizeof(linea) - idx,
-                    "%.2f,%.2f,%.2f,%.2f%s",
-                    currentHeight, adcVoltage, error, setPoint,
-                    (count + 1 == NUM_DATOS) ? "\n" : ";");
+                    "{\"CH\":%.2f,\"adc_mV\":%.2f,\"err\":%.2f,\"SP\":%.2f}%s",
++                    currentHeight, adc_mV, error, setPoint,
+                     (count + 1 == NUM_DATOS) ? "]\n" : "," );
 
     count++;
 
@@ -190,7 +206,7 @@ void inicializarPWM() {
   };
   gptimer_new_timer(&gcfg, &gptimer);
   gptimer_alarm_config_t aconf = {
-    .alarm_count = 100, // 1 ms
+    .alarm_count = (uint64_t)SAMPLE_PERIOD_MS * 1000ULL,
     .reload_count = 0,
     .flags = { .auto_reload_on_alarm = true }
   };
@@ -224,6 +240,12 @@ void procesarComando(const String &cmd) {
     else if (p.equalsIgnoreCase("KI")) Ki        = val;
     else if (p.equalsIgnoreCase("KD")) Kd        = val;
     else if (p.equalsIgnoreCase("SP")) setPoint  = val;
+      // nuevos comandos para calibración
+    else if (p.equalsIgnoreCase("ADCOFF")) adcOffset_mV = val;     // en mV (ej. -30)
+    else if (p.equalsIgnoreCase("ADCSCL")) adcScale     = val;     // multiplicador (ej. 0.78)
+    else if (p.equalsIgnoreCase("VMIN"))   VMIN_V       = val;    // en V (ej. 0.120)
+    else if (p.equalsIgnoreCase("VMAX"))   VMAX_V       = val;    // en V (ej. 1.200)
+  
   portEXIT_CRITICAL(&timerMux);
   Serial.println("OK");
 }

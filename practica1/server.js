@@ -50,7 +50,40 @@ io.on('connection', (socket) => {
       
       // 3. Reenviar los datos del puerto al cliente
       parser.on('data', (line) => {
-        io.emit('serialData', line.trim());
+        // Asegurar raw string siempre
+        const rawLine = (typeof line === 'string') ? line.trim() : line.toString().trim();
+        if (!rawLine) return;
+
+        // 1) Emitir la línea cruda (evento que el cliente viejo puede seguir usando)
+        io.emit('serialLine', rawLine);
+
+        // 2) Intentar parsear JSON (batch de objetos) y emitir si OK
+        try {
+          const parsed = JSON.parse(rawLine);
+          if (Array.isArray(parsed)) {
+            io.emit('serialData', parsed); // array de objetos {CH,adcV,err,SP}
+            return;
+          }
+        } catch (e) {
+          // ignore, intentamos fallback below
+        }
+
+        // 3) Fallback: formato legacy "h,v,err,sp;h2,..." -> convertir a array de objetos
+        try {
+          const parts = rawLine.split(';').filter(p => p.trim().length);
+          const batch = parts.map(p => {
+            const f = p.split(',').map(s => s.trim());
+            return {
+              CH: parseFloat(f[0]) || 0,
+              adcV: parseFloat(f[1]) || 0,
+              err: parseFloat(f[2]) || 0,
+              SP: parseFloat(f[3]) || 0
+            };
+          });
+          io.emit('serialData', batch);
+        } catch (e2) {
+          console.error('Serial parse error:', e2, 'line:', rawLine);
+        }
       });
     });
   });

@@ -8,16 +8,46 @@
 </head>
 <body>
   <header class="banner">
+    <img src="Logo.png" alt="Logo" class="logo">
     <div class="branding">
-      <img src="logo.png" alt="Logo" class="logo">
       <h1>SISTEMA PID</h1>
-      <h2>Instrumentación Virtual</h2>
+      <h2>Monitor de Nivel de Agua</h2>
       <h3>2025-01</h3>
     </div>
+    
+  <div id="top-bar" class="top-bar-stacked">
+    <h3>Puerto Serial</h3>
+    <div class="input-group">
+      <select id="portSelector"></select>
+      <button id="connectBtn">Conectar</button>
+    </div>
+    <div class="status-message" style="display: flex; align-items: center; justify-content: center; gap: 10px;">
+      <span id="statusLed" style="width: 15px; height: 15px; border-radius: 50%; display: inline-block; background: red;"></span>
+      <span id="statusMsg">Desconectado</span>
+    </div>
+  </div>
+
     <div class="command-container">
       <h3>Enviar Comando</h3>
-      <div class="input-group">
-        <input type="text" id="commandInput" placeholder="Ej: SP=5.5" />
+        <div class="input-group" id="commandControls">
+        <select id="commandSelect" title="Selecciona un comando (hover para ver descripción)">
+          <option value="FP" title="Frecuencia PWM (Hz)">FP</option>
+          <option value="DC" title="Ciclo de trabajo (%) de la bomba">DC</option>
+          <option value="KP" title="Ganancia proporcional (PID)">KP</option>
+          <option value="KI" title="Ganancia integral (PID)">KI</option>
+          <option value="KD" title="Ganancia derivativa (PID)">KD</option>
+          <option value="SP" title="SetPoint altura (cm)">SP</option>
+          <option value="ADCOFF" title="Offset ADC en mV (ej. -30)">ADCOFF</option>
+          <option value="ADCSCL" title="Escala ADC (multiplicador, ej. 0.78)">ADCSCL</option>
+          <option value="VMIN" title="Voltaje mínimo (V) → 0 cm">VMIN</option>
+          <option value="VMAX" title="Voltaje máximo (V) → altura máxima">VMAX</option>
+          <option value="HMIN" title="Altura mínima (cm)">HMIN</option>
+          <option value="HMAX" title="Altura máxima (cm)">HMAX</option>
+          <option value="CF" title="Factor de capacitancia (simulado)">CF</option>
+          <option value="CUSTOM" title="Comando libre: escribe en la casilla 'comando'">CUSTOM</option>
+        </select>
+
+        <input type="number" id="valueInput" placeholder="valor" step="any" style="width:110px;" />
         <button id="sendBtn">Enviar</button>
       </div>
       <div id="statusDiv" class="status-message">Conectado al servidor</div>
@@ -40,10 +70,10 @@
       </div>
       <div class="tank-body">
         <div class="tank-scale">
-          <div class="scale-mark" style="bottom: 90%;">8 cm</div>
-          <div class="scale-mark" style="bottom: 75%;">6 cm</div>
-          <div class="scale-mark" style="bottom: 50%;">4 cm</div>
-          <div class="scale-mark" style="bottom: 25%;">2 cm</div>
+          <div class="scale-mark" style="bottom: 100%;">10 cm</div>
+          <div class="scale-mark" style="bottom: 80%;">8 cm</div>
+          <div class="scale-mark" style="bottom: 60%;">6 cm</div>
+          <div class="scale-mark" style="bottom: 20%;">2 cm</div>
           <div class="scale-mark" style="bottom: 0%;">0 cm</div>
         </div>
         <div id="water-level-tank" class="water-level"></div>

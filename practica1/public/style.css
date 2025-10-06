@@ -20,7 +20,9 @@ body {
 
 .banner .branding {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start; /* Usa 'center' si prefieres centrado */
+  gap: 0.2em;
 }
 
 .banner .logo {
@@ -101,6 +103,8 @@ body {
   border-radius: 6px;
   height: 300px;
 }
+#tank-container { position: relative; height: 300px; width: 120px; border: 1px solid #333; overflow: hidden; }
+#water-level-tank { position: absolute; bottom: 0; left: 0; right: 0; height: 0%; background: blue; transition: height 150ms linear; }
 
 .chart-container canvas {
   width: 100% !important;
@@ -151,4 +155,41 @@ body {
   font-size: 0.8em;
   color: #555;
   transform: translateY(50%);
+}
+#top-bar {
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+#statusLed {
+  transition: background 0.2s;
+}
+
+.top-bar-stacked {
+  background: #444;
+  padding: 10px;
+  border-radius: 8px;
+  min-width: 250px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.top-bar-stacked h3 {
+  margin: 0;
+  font-size: 1.1em;
+  font-weight: bold;
+}
+
+.top-bar-stacked .input-group {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  justify-content: center;
+}
+
+.top-bar-stacked .status-message {
+  width: 100%;
+  justify-content: center;
+  font-size: 1em;
 }
