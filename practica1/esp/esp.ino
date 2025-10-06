@@ -6,7 +6,7 @@
 #define NUM_DATOS 10
 // Parámetros del sensor de nivel y la altura máxima
 volatile  float VMIN_V = 120.0f; // 120 mV = 0 cm
-volatile  float VMAX_V = 900.0f; // 1200 mV = 10.9 cm por defecto
+volatile  float VMAX_V = 850.0f; // 1200 mV = 10.9 cm por defecto
 volatile float adcOffset_mV = -30.0f;  // sumar (mV)
 volatile float adcScale     = 1.0f;  // multiplicar
 // Alturas configurables (se pueden cambiar por comando)
@@ -29,7 +29,7 @@ const ledc_timer_bit_t PWM_RESOLUTION = LEDC_TIMER_10_BIT; // Más resolución p
 // ————— PID —————
 float setPoint    = 2.0f; // Altura objetivo en cm
 float Kp = 10.0f, Ki = 0.8f, Kd = 1.0f; // Parámetros ajustados
-char linea[512];
+char linea[2048];
 int idx = 0;
 
 // ————— Muestreo con GPTimer —————
@@ -71,17 +71,18 @@ void taskControl(void *param) {
     if (norm > 1.0f) norm = 1.0f;
     float currentHeight = minHeightCm + norm * (maxHeightCm - minHeightCm);
 
-
-    float dt = 0.001f; // 1 ms fijo
+    const float CMIN_pF = 20.0f;
+    const float CMAX_pF = 50.0f;
+    float cap_pF = CMIN_pF + norm * (CMAX_pF - CMIN_pF);
+    float dt = 0.01f; // 1 ms fijo
     float error = setPoint - currentHeight;
     float pidOut = calcularPID(currentHeight, dt);
 
     // Lógica de control de la bomba
     if (currentHeight < setPoint) {
       // Necesita más agua, la bomba debe estar encendida
-      // Aplicar el ciclo de trabajo del PID, asegurando un mínimo del 20%
       float newDutyCycle = constrain(pidOut, 0.0f, 100.0f);
-      dutyCycle = (newDutyCycle > 0.0f) ? max(newDutyCycle, 20.0f) : 0.0f;
+      dutyCycle = (newDutyCycle > 0.0f) ? max(newDutyCycle, 50.0f) : 0.0f;
     } else {
       // Nivel de agua suficiente, apagar la bomba
       dutyCycle = 0.0f;
@@ -94,20 +95,24 @@ void taskControl(void *param) {
 
     static int count = 0;
     if (count == 0) {
-      // abrir array JSON al inicio del batch
+      // iniciar array JSON
+      idx = 0;
+      // Añadir corchete de apertura para formar un array JSON válido
       idx += snprintf(linea + idx, sizeof(linea) - idx, "[");
     }
 
-    // objeto JSON por muestra
+    // objeto JSON por muestra (usar coma como separador)
     idx += snprintf(linea + idx, sizeof(linea) - idx,
-                    "{\"CH\":%.2f,\"adc_mV\":%.2f,\"err\":%.2f,\"SP\":%.2f}%s",
-+                    currentHeight, adc_mV, error, setPoint,
-                     (count + 1 == NUM_DATOS) ? "]\n" : "," );
+                     "{\"CH\":%.2f,\"adc_mV\":%.2f,\"err\":%.2f,\"C\":%.2f,\"SP\":%.2f}%s",
+                     currentHeight, adc_mV, error, cap_pF, setPoint,
+                     (count + 1 == NUM_DATOS) ? "" : "," );
 
     count++;
 
     if (count == NUM_DATOS) {
-      Serial.print(linea);
+      // cerrar array JSON y enviar (println añade '\r\n')
+      idx += snprintf(linea + idx, sizeof(linea) - idx, "]");
+      Serial.println(linea);
       idx = 0;
       count = 0;
     }

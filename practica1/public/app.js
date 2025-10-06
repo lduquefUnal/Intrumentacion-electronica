@@ -18,7 +18,8 @@ document.addEventListener("DOMContentLoaded", function () {
   let setPoint = 0.0;
   let error = 0.0;
   let globalTime = 0;
-
+  let latestLevel = NaN;
+  let latestCap_pF = NaN;
   // Ventana de tiempo y muestreo
   const sampleInterval = 1;
   const chartWindow = 300;
@@ -130,9 +131,16 @@ document.addEventListener("DOMContentLoaded", function () {
         const currentSetPoint = parseFloat(obj.SP);
         const errVal = parseFloat(obj.err);
 
-        if (!isNaN(level)) dataBuffer.push(level);
+        if (!isNaN(level)) {
+          dataBuffer.push(level);
+          latestLevel = level;
+        }
         if (!isNaN(currentSetPoint)) setPoint = currentSetPoint;
         if (!isNaN(errVal)) error = errVal;
+       let capVal = NaN;
+       if (obj.C !== undefined && obj.C !== null) capVal = parseFloat(obj.C);
+       else if (obj.Ctxt) capVal = parseFloat(String(obj.Ctxt).replace(/[^\d.\-]/g, ''));
+      if (!isNaN(capVal)) latestCap_pF = capVal;
 
         updateTank(level);
       }
@@ -210,8 +218,19 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     globalTime = time;
-
-    errorDisplay.textContent = isNaN(error) ? '---' : error.toFixed(2);
+        errorDisplay.textContent = isNaN(error) ? '---' : error.toFixed(2);
+        // Mostrar error porcentual respecto al setPoint y capacitancia al lado
+    let errPercent = NaN;
+    if (!isNaN(setPoint) && setPoint !== 0 && !isNaN(latestLevel)) {
+      errPercent = ((setPoint - latestLevel) / setPoint) * 100.0;
+    }
+    let errText = isNaN(errPercent) ? '---' : `${errPercent.toFixed(2)} %`;
+    // Mostrar etiqueta "C:" junto al valor de capacitancia (usar "Capacitancia:" si prefieres)
+    let capText = '';
+    if (!isNaN(latestCap_pF)) {
+      capText = ` · C: ${latestCap_pF.toFixed(2)} pF`;
+    }
+    errorDisplay.textContent = `${errText}${capText}`;
 
     const elapsed = performance.now() - start;
     setTimeout(updateCharts, Math.max(0, chartStep - elapsed));

@@ -44,45 +44,50 @@ io.on('connection', (socket) => {
       
       // Conexión exitosa, configurar el parser
       parser = portSerial.pipe(new ReadlineParser({ delimiter: '\n' }));
-      
+      let serialBuffer = '';
       console.log(`Conectado al puerto serial: ${portName}`);
       socket.emit('statusUpdate', `Conectado al puerto serial: ${portName}`);
       
-      // 3. Reenviar los datos del puerto al cliente
-      parser.on('data', (line) => {
-        // Asegurar raw string siempre
+
+ parser.on('data', (line) => {
         const rawLine = (typeof line === 'string') ? line.trim() : line.toString().trim();
         if (!rawLine) return;
 
-        // 1) Emitir la línea cruda (evento que el cliente viejo puede seguir usando)
-        io.emit('serialLine', rawLine);
+        // Quitar prefijo tipo "16:21:54.220 -> " si aparece (monitor Arduino)
+        const cleaned = rawLine.replace(/^\s*\d{1,2}:\d{2}:\d{2}\.\d+\s*->\s*/, '');
 
-        // 2) Intentar parsear JSON (batch de objetos) y emitir si OK
-        try {
-          const parsed = JSON.parse(rawLine);
-          if (Array.isArray(parsed)) {
-            io.emit('serialData', parsed); // array de objetos {CH,adcV,err,SP}
-            return;
+        // Acumular fragmentos y buscar JSON completo (array u objeto)
+        serialBuffer += cleaned;
+
+        // Extraer y parsear mientras haya JSON completo en el buffer
+        while (true) {
+          const idxArrStart = serialBuffer.indexOf('[');
+          const idxObjStart = serialBuffer.indexOf('{');
+          let startIdx = -1;
+          let endIdx = -1;
+
+          if (idxArrStart !== -1 && (idxObjStart === -1 || idxArrStart < idxObjStart)) {
+            startIdx = idxArrStart;
+            endIdx = serialBuffer.indexOf(']', startIdx);
+          } else if (idxObjStart !== -1) {
+            startIdx = idxObjStart;
+            endIdx = serialBuffer.indexOf('}', startIdx);
           }
-        } catch (e) {
-          // ignore, intentamos fallback below
-        }
 
-        // 3) Fallback: formato legacy "h,v,err,sp;h2,..." -> convertir a array de objetos
-        try {
-          const parts = rawLine.split(';').filter(p => p.trim().length);
-          const batch = parts.map(p => {
-            const f = p.split(',').map(s => s.trim());
-            return {
-              CH: parseFloat(f[0]) || 0,
-              adcV: parseFloat(f[1]) || 0,
-              err: parseFloat(f[2]) || 0,
-              SP: parseFloat(f[3]) || 0
-            };
-          });
-          io.emit('serialData', batch);
-        } catch (e2) {
-          console.error('Serial parse error:', e2, 'line:', rawLine);
+          if (startIdx === -1 || endIdx === -1) break; // no hay JSON completo aún
+
+          const candidate = serialBuffer.substring(startIdx, endIdx + 1);
+          try {
+            const parsed = JSON.parse(candidate);
+            const out = Array.isArray(parsed) ? parsed : [parsed];
+            io.emit('serialData', out);
+            io.emit('serialLine', candidate);
+            // eliminar la parte procesada del buffer
+            serialBuffer = serialBuffer.slice(endIdx + 1);
+          } catch (e) {
+            // JSON aún incompleto o malformado; esperar más datos
+            break;
+          }
         }
       });
     });
