@@ -17,13 +17,18 @@ volatile float maxHeightCm = 10.0f;
 // ————— Pines y canales —————
 static const adc1_channel_t ADC_CHANNEL  = ADC1_CHANNEL_4;  // GPIO32 para el sensor de nivel
 const int pwmPin = 25;                                      // PWM para la bomba
-
+const int pwmPin = 26; 
 // ————— Parámetros PWM —————
 volatile float freqPWM   = 500.0f;  // Frecuencia en Hz para la bomba
-volatile float dutyCycle = 60.0f;    // % (ciclo de trabajo mínimo)
+volatile float dutyCycle = 60.0f;    
+volatile float dutyCycle2 = 60.0f;
+const float drainHysteresis = 0.20f; // cm: diferencia para empezar a vaciar
+const float minFillDuty = 50.0f;     // % mínimo para llenar (ya usabas 50)
+const float minDrainDuty = 50.0f;
 
 const ledc_timer_t     PWM_TIMER      = LEDC_TIMER_0;
-const ledc_channel_t   PWM_CHANNEL    = LEDC_CHANNEL_0;
+const ledc_channel_t   PWM_CHANNEL    = LEDC_CHANNEL_0; //pin 25
+const ledc_channel_t   PWM_CHANNEL2   = LEDC_CHANNEL_1; //pin 26
 const ledc_timer_bit_t PWM_RESOLUTION = LEDC_TIMER_10_BIT; // Más resolución para la bomba
 
 // ————— PID —————
@@ -79,13 +84,23 @@ void taskControl(void *param) {
     float pidOut = calcularPID(currentHeight, dt);
 
     // Lógica de control de la bomba
-    if (currentHeight < setPoint) {
-      // Necesita más agua, la bomba debe estar encendida
-      float newDutyCycle = constrain(pidOut, 0.0f, 100.0f);
-      dutyCycle = (newDutyCycle > 0.0f) ? max(newDutyCycle, 50.0f) : 0.0f;
+     if (pidOut > 0.0f) {
+      // llenar: asegurar mínimo minFillDuty cuando pid pide
+      float d = pidOut;
+      if (d > 0.0f) d = max(d, minFillDuty);
+      dutyCycle = constrain(d, 0.0f, 100.0f);
+      // apagar vaciado
+      dutyCycle2 = 0.0f;
+    } else if (pidOut < 0.0f && currentHeight > setPoint + drainHysteresis) {
+      // vaciar: usar mínimo minDrainDuty
+      float d2 = -pidOut;
+      if (d2 > 0.0f) d2 = max(d2, minDrainDuty);
+      dutyCycle2 = constrain(d2, 0.0f, 100.0f);
+      dutyCycle = 0.0f;
     } else {
       // Nivel de agua suficiente, apagar la bomba
       dutyCycle = 0.0f;
+      dutyCycle2 = 0.0f;
       // Reiniciar el término integral para evitar el windup
       resetIntegral();
     }
@@ -176,8 +191,10 @@ float calcularPID(float measurement, float dt) {
                + derivativeTerm;
 
   // 5) Saturar la salida
-  float outClamped = constrain(output, 0.0f, 100.0f);
-  return outClamped;
+  // 5) Limitar la salida (positivo: llenar, negativo: vaciar)
+  if (output > 100.0f) output = 100.0f;
+  if (output < -100.0f) output = -100.0f;
+  return output;
 }
 
 void inicializarPWM() {
