@@ -16,8 +16,11 @@ const int pwmPin = 25;                                      // PWM para la bombi
 // —————  calibración ADC —————
 volatile float tempPatronOffset_mV = 0.0f;
 volatile float tempPatron_mV_per_C = 10.0f;
+volatile float adcScale = 1.0f;
 
-volatile float tempCalOffset_mV = -30.0f;  // sumar (mV) - mantenimiento de calibración ADC
+volatile float correccion = 6.0f;
+
+volatile float tempCalOffset_mV = 0.0f;  // sumar (mV) - mantenimiento de calibración ADC
 volatile float tempCal_mV_per_C     = 1.0f;  
 
 const ledc_timer_t     PWM_TIMER      = LEDC_TIMER_0;
@@ -26,8 +29,8 @@ const ledc_channel_t   PWM_CHANNEL2   = LEDC_CHANNEL_1; //pin 26
 const ledc_timer_bit_t PWM_RESOLUTION = LEDC_TIMER_10_BIT; // Más resolución para la bomba
 
 // ————— PID —————
-float setPoint    = 2.0f; // Altura objetivo en cm
-float Kp = 10.0f, Ki = 0.8f, Kd = 1.0f; // Parámetros ajustados
+float setPoint    = 28.0f; // Altura objetivo en cm
+float Kp = 30.0f, Ki = 0.8f, Kd = 1.0f; // Parámetros ajustados
 char linea[2048];
 int idx = 0;
 
@@ -44,7 +47,7 @@ static float sumErr   = 0;
 TaskHandle_t taskHandle = NULL;
 
 // ————— Calibración ADC —————
-static const uint32_t DEFAULT_VREF = 1100; // Calibración VREF típica
+static const uint32_t DEFAULT_VREF = 0; // Calibración VREF típica
 static esp_adc_cal_characteristics_t adc_chars;
 
 // ————— Prototipos —————
@@ -61,20 +64,20 @@ void taskControl(void *param) {
     // --- Leer y calibrar ADC del sensor de nivel (GPIO32) ---
     uint32_t rawADC = adc1_get_raw(ADC_CHANNEL);
     uint32_t mV = esp_adc_cal_raw_to_voltage(rawADC, &adc_chars);
-    float mV_corr = (float)mV * adcScale + adcOffset_mV; // usar mV, no mV_raw
+    float mV_corr = (float)mV * adcScale + tempPatronOffset_mV; // usar mV, no mV_raw
     float adc_mV = mV_corr;      
     float tempPatron = (adc_mV - tempPatronOffset_mV) / tempPatron_mV_per_C;
 
 
-    uint32_t rawADC_Cal = adc1_get_raw(ADC_CHANNEL);
+    uint32_t rawADC_Cal = adc1_get_raw(ADC_CHANNEL2);
     uint32_t mV_Cal = esp_adc_cal_raw_to_voltage(rawADC_Cal, &adc_chars);
-    float mV_corr_Cal = (float)mV_Cal * adcScale + adcOffset_mV; // usar mV, no mV_raw
+    float mV_corr_Cal = (float)mV_Cal * adcScale + tempPatronOffset_mV; // usar mV, no mV_raw
     float adc_mV_Cal = mV_corr_Cal;      
-    float tempCal = (adc_mV_Cal - tempCalOffset_mV) / tempCal_mV_per_C;
+    float tempCal = (0.05285354182821799 * adc_mV_Cal) - 49.655234285756165 - correccion;
 
     float dt = 0.01f; // 1 ms fijo
-    float error = setPoint - currentHeight;
-    float pidOut = calcularPID(currentHeight, dt);
+    float error = setPoint - tempPatron;
+    float pidOut = calcularPID(tempPatron, dt);
 
     // Lógica de control de la bomba
     if (pidOut > 0.0f) {
@@ -97,8 +100,8 @@ void taskControl(void *param) {
 
     // objeto JSON por muestra (usar coma como separador)
     idx += snprintf(linea + idx, sizeof(linea) - idx,
-                     "{\"Temp_patron\":%.2f,\"adc_mV_cal\":%.2f,\"err\":%.2f,\"SP\":%.2f}%s",
-                     currentHeight, adc_mV, error, , setPoint,
+                     "{\"Temp_patron\":%.2f,\"adc_mV_cal\":%.2f, \"TempTermist\":%.2f, \"err\":%.2f,\"SP\":%.2f}%s",
+                     tempPatron, adc_mV_Cal, tempCal, error, setPoint,
                      (count + 1 == NUM_DATOS) ? "" : "," );
 
     count++;
@@ -243,10 +246,8 @@ void procesarComando(const String &cmd) {
     else if (p.equalsIgnoreCase("KD")) Kd        = val;
     else if (p.equalsIgnoreCase("SP")) setPoint  = val;
       // nuevos comandos para calibración
-    else if (p.equalsIgnoreCase("ADCOFF")) adcOffset_mV = val;     // en mV (ej. -30)
+    else if (p.equalsIgnoreCase("ADCOFF")) tempPatronOffset_mV = val;     // en mV (ej. -30)
     else if (p.equalsIgnoreCase("ADCSCL")) adcScale     = val;     // multiplicador (ej. 0.78)
-    else if (p.equalsIgnoreCase("VMIN"))   VMIN_V       = val;    // en V (ej. 0.120)
-    else if (p.equalsIgnoreCase("VMAX"))   VMAX_V       = val;    // en V (ej. 1.200)
   
   portEXIT_CRITICAL(&timerMux);
   Serial.println("OK");
