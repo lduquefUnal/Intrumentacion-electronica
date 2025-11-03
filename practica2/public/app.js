@@ -141,7 +141,7 @@ const chartConfig = (def) => ({
     if (Array.isArray(payload)) {
       for (const obj of payload) {
         const Temperatura = parseFloat(obj.TempTermist);
-        const TemperaturaPatron = parseFloat(obj.TempPatron);
+        const TemperaturaPatron = parseFloat(obj.Temp_Patron);
         const currentSetPoint = parseFloat(obj.SP);
         const errVal = parseFloat(obj.err);
 
@@ -208,30 +208,57 @@ const chartConfig = (def) => ({
     let time = globalTime;
     const chart = charts['chart1'];
 
-    if (chart) {
-      const dataset = chart.data.datasets[0];
+  if (chart) {
+      // Asignar los datasets correctamente según tu chartConfig
+      const setpointDataset = chart.data.datasets[0];   // Setpoint (rojo, dashed)
+      const patronDataset = chart.data.datasets[1];     // T. Patrón (azul)
+      const calibrarDataset = chart.data.datasets[2];   // T. a Calibrar (verde)
 
-      dataBuffer.forEach(val => {
-        dataset.data.push({ x: time, y: val });
+      // Asumimos que dataBuffer (TempTermist) y dataBufferPatron (Temp_patron)
+      // reciben datos al mismo tiempo.
+      const numPoints = dataBuffer.length;
+      for (let i = 0; i < numPoints; i++) {
+        const tempTermistVal = dataBuffer[i];
+        const tempPatronVal = dataBufferPatron[i];
+
+        // Añadir T. a Calibrar (TempTermist) al dataset 2
+        if (tempTermistVal !== undefined) {
+          calibrarDataset.data.push({ x: time, y: tempTermistVal });
+        }
+        
+        // Añadir T. Patrón (Temp_patron) al dataset 1
+        if (tempPatronVal !== undefined) {
+          patronDataset.data.push({ x: time, y: tempPatronVal });
+        }
+
+        // Incrementar el tiempo UNA VEZ por cada par de puntos
         time += sampleInterval;
-      });
-
-      dataBuffer.length = 0;
-
-      while (dataset.data.length > maxPoints) {
-        dataset.data.shift();
       }
 
-      const setpointDataset = chart.data.datasets[1];
+      // Limpiar los buffers de datos ya procesados
+      dataBuffer.length = 0;
+      dataBufferPatron.length = 0;
+
+      // Eliminar puntos viejos de los datasets de datos
+      while (calibrarDataset.data.length > maxPoints) {
+        calibrarDataset.data.shift();
+      }
+      while (patronDataset.data.length > maxPoints) {
+        patronDataset.data.shift();
+      }
+
+      // Actualizar el dataset del Setpoint (línea plana discontinua)
+      // Usa la variable global 'setPoint'
       setpointDataset.data = [
         { x: time - chartWindow, y: setPoint },
         { x: time, y: setPoint }
       ];
 
+      // Actualizar los límites del eje X para crear el efecto de scroll
       chart.options.scales.x.min = time - chartWindow;
       chart.options.scales.x.max = time;
 
-      chart.update('none');
+      chart.update('none'); // Actualizar el gráfico sin animación
     }
 
     globalTime = time;
