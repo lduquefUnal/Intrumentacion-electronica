@@ -98,10 +98,13 @@ void taskControl(void *param) {
       idx += snprintf(linea + idx, sizeof(linea) - idx, "[");
     }
 
+float ruido = ((esp_random()/(float)UINT32_MAX) * 2) -1;
+
     // objeto JSON por muestra (usar coma como separador)
     idx += snprintf(linea + idx, sizeof(linea) - idx,
                      "{\"Temp_patron\":%.2f,\"adc_mV_cal\":%.2f, \"TempTermist\":%.2f, \"err\":%.2f,\"SP\":%.2f}%s",
-                     tempPatron, adc_mV_Cal, tempCal, error, setPoint,
+//                     tempPatron, adc_mV_Cal, tempCal, error, setPoint,
+                    35 + ruido, 1700 + ruido, 33 + ruido, 3 + ruido, 36,
                      (count + 1 == NUM_DATOS) ? "" : "," );
 
     count++;
