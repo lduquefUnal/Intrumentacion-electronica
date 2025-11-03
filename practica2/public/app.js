@@ -37,7 +37,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
   const charts = {};
   const dataBuffer = [];
-
+  const dataBufferPatron = [];
+  
   pauseBtn.addEventListener('click', () => {
     isPaused = true;
     pauseBtn.disabled = true;
@@ -49,32 +50,44 @@ document.addEventListener("DOMContentLoaded", function () {
     resumeBtn.disabled = true;
   });
 
-  const chartConfig = (def) => ({
-    type: 'line',
-    data: {
-      datasets: [
-        {
-          label: def.label,
-          borderColor: def.color,
-          data: [],
-          fill: false,
-          tension: 0.1,
-          pointRadius: 0.1,
-          showLine: true,
-          borderWidth: 1
-        },
-        ...(def.id === 'chart1' ? [{
-          label: 'SetPoint',
-          borderColor: 'green',
-          borderDash: [5, 5],
-          data: [],
-          fill: false,
-          pointRadius: 0,
-          tension: 0,
-          borderWidth: 1
-        }] : [])
-      ]
-    },
+const chartConfig = (def) => ({
+  type: 'line',
+  data: {
+    labels: [], // Las etiquetas de tiempo van aquí
+    datasets: [
+      // Dataset 1: Setpoint
+      {
+        label: 'Setpoint (°C)',
+        borderColor: 'red',
+        borderDash: [5, 5], // Línea punteada
+        data: [],
+        fill: false,
+        tension: 0.1,
+        pointRadius: 0.1,
+        borderWidth: 1
+      },
+      // Dataset 2: T. Patrón
+      {
+        label: 'T. Patrón (°C)',
+        borderColor: 'blue',
+        data: [],
+        fill: false,
+        tension: 0.1,
+        pointRadius: 0.1,
+        borderWidth: 1
+      },
+      // Dataset 3: T. a Calibrar
+      {
+        label: 'T. a Calibrar (°C)',
+        borderColor: 'green',
+        data: [],
+        fill: false,
+        tension: 0.1,
+        pointRadius: 0.1,
+        borderWidth: 1
+      }
+    ]
+  },
     options: {
       animation: false,
       responsive: true,
@@ -91,7 +104,7 @@ document.addEventListener("DOMContentLoaded", function () {
           title: { display: true, text: def.label }
         }
       },
-      plugins: { legend: { display: false } }
+      plugins: { legend: { display: true } }
     }
   });
 
@@ -135,6 +148,9 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!isNaN(Temperatura)) {
           dataBuffer.push(Temperatura);
           latestTemperatura = Temperatura;
+        }
+        if (!isNaN(TemperaturaPatron)) {
+          dataBufferPatron.push(TemperaturaPatron);
         }
         if (!isNaN(currentSetPoint)) setPoint = currentSetPoint;
         if (!isNaN(errVal)) error = errVal;
