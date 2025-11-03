@@ -6,8 +6,8 @@ document.addEventListener("DOMContentLoaded", function () {
   const resumeBtn = document.getElementById('resumeBtn');
   const statusDiv = document.getElementById('statusDiv');
   const errorDisplay = document.getElementById('errorDisplay');
-  const waterLevelTank = document.getElementById('water-level-tank');
-  const currentLevelEl = document.getElementById('current-level');
+  const thermometerLevel = document.getElementById('water-Temperatura-tank');
+  const currentTemperaturaEl = document.getElementById('current-Temperatura');
   const portSelector = document.getElementById('portSelector');
   const connectBtn = document.getElementById('connectBtn');
   const statusLed = document.getElementById('statusLed');
@@ -18,7 +18,7 @@ document.addEventListener("DOMContentLoaded", function () {
   let setPoint = 0.0;
   let error = 0.0;
   let globalTime = 0;
-  let latestLevel = NaN;
+  let latestTemperatura = NaN;
   let latestCap_pF = NaN;
   // Ventana de tiempo y muestreo
   const sampleInterval = 1;
@@ -29,9 +29,9 @@ document.addEventListener("DOMContentLoaded", function () {
   const chartDefs = [
     {
       id: 'chart1',
-      label: 'Nivel del Agua (cm)',
-      color: 'blue',
-      yRange: { min: 0, max: 12 }
+      label: 'Temperatura °C',
+      color: 'red',
+      yRange: { min: 25, max: 60 }
     }
   ];
 
@@ -103,22 +103,22 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   });
 
-  function updateTank(level) {
-     if (waterLevelTank) {
+  function updateTemp(Temperatura) {
+     if (thermometerLevel) {
     // tomar el máximo de la escala Y del chart si está disponible, si no usar 12
     const chart = charts['chart1'];
     const chartYMax = chart && chart.options && chart.options.scales && chart.options.scales.y && typeof chart.options.scales.y.max === 'number'
       ? chart.options.scales.y.max
       : 12;
 
-    const val = Number(level);
+    const val = Number(Temperatura);
     const percentage = isNaN(val) ? 0 : (val / chartYMax) * 100;
-    waterLevelTank.style.height = `${Math.min(100, Math.max(0, percentage))}%`;
-    waterLevelTank.style.backgroundColor = 'blue';
+    thermometerLevel.style.height = `${Math.min(100, Math.max(0, percentage))}%`;
+    thermometerLevel.style.backgroundColor = 'red';
   }
-  if (currentLevelEl) {
-    const v = Number(level);
-    currentLevelEl.textContent = isNaN(v) ? '---' : v.toFixed(2);
+  if (currentTemperaturaEl) {
+    const v = Number(Temperatura);
+    currentTemperaturaEl.textContent = isNaN(v) ? '---' : v.toFixed(2);
   }
   }
 
@@ -127,13 +127,14 @@ document.addEventListener("DOMContentLoaded", function () {
     // Si el servidor ya envía un array de objetos
     if (Array.isArray(payload)) {
       for (const obj of payload) {
-        const level = parseFloat(obj.CH);
+        const Temperatura = parseFloat(obj.TempTermist);
+        const TemperaturaPatron = parseFloat(obj.TempPatron);
         const currentSetPoint = parseFloat(obj.SP);
         const errVal = parseFloat(obj.err);
 
-        if (!isNaN(level)) {
-          dataBuffer.push(level);
-          latestLevel = level;
+        if (!isNaN(Temperatura)) {
+          dataBuffer.push(Temperatura);
+          latestTemperatura = Temperatura;
         }
         if (!isNaN(currentSetPoint)) setPoint = currentSetPoint;
         if (!isNaN(errVal)) error = errVal;
@@ -142,7 +143,7 @@ document.addEventListener("DOMContentLoaded", function () {
        else if (obj.Ctxt) capVal = parseFloat(String(obj.Ctxt).replace(/[^\d.\-]/g, ''));
       if (!isNaN(capVal)) latestCap_pF = capVal;
 
-        updateTank(level);
+        updateTemp(Temperatura);
       }
       return;
     }
@@ -154,11 +155,11 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!point) continue;
         const values = point.split(',');
         if (values.length >= 2) {
-          const level = parseFloat(values[0]);
+          const Temperatura = parseFloat(values[0]);
           const currentSetPoint = parseFloat(values[1]);
-          if (!isNaN(level)) dataBuffer.push(level);
+          if (!isNaN(Temperatura)) dataBuffer.push(Temperatura);
           if (!isNaN(currentSetPoint)) setPoint = currentSetPoint;
-          updateTank(level);
+          updateTemp(Temperatura);
         }
       }
     }
@@ -221,8 +222,8 @@ document.addEventListener("DOMContentLoaded", function () {
         errorDisplay.textContent = isNaN(error) ? '---' : error.toFixed(2);
         // Mostrar error porcentual respecto al setPoint y capacitancia al lado
     let errPercent = NaN;
-    if (!isNaN(setPoint) && setPoint !== 0 && !isNaN(latestLevel)) {
-      errPercent = ((setPoint - latestLevel) / setPoint) * 100.0;
+    if (!isNaN(setPoint) && setPoint !== 0 && !isNaN(latestTemperatura)) {
+      errPercent = ((setPoint - latestTemperatura) / setPoint) * 100.0;
     }
     let errText = isNaN(errPercent) ? '---' : `${errPercent.toFixed(2)} %`;
     // Mostrar etiqueta "C:" junto al valor de capacitancia (usar "Capacitancia:" si prefieres)

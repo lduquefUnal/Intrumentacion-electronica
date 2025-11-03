@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <title>Monitor de Nivel de Agua</title>
+  <title>Monitor de Temperatura</title>
   <link rel="stylesheet" href="style.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
@@ -11,7 +11,7 @@
     <img src="Logo.png" alt="Logo" class="logo">
     <div class="branding">
       <h1>SISTEMA PID</h1>
-      <h2>Monitor de Nivel de Agua</h2>
+      <h2>Monitor de Temperatura</h2>
       <h3>2025-01</h3>
     </div>
     
@@ -65,16 +65,17 @@
 
     <div class="tank-visualizer">
       <div class="tank-header">
-        <p>Nivel de Agua</p>
-        <p><span id="current-level">---</span> cm</p>
+        <p>Temperatura</p>
+        <p><span id="current-level">---</span> °C</p>
       </div>
       <div class="tank-body">
         <div class="tank-scale">
-          <div class="scale-mark" style="bottom: 100%;">10 cm</div>
-          <div class="scale-mark" style="bottom: 80%;">8 cm</div>
-          <div class="scale-mark" style="bottom: 60%;">6 cm</div>
-          <div class="scale-mark" style="bottom: 20%;">2 cm</div>
-          <div class="scale-mark" style="bottom: 0%;">0 cm</div>
+          <div class="scale-mark" style="bottom: 100%;">60 °C</div>
+          <div class="scale-mark" style="bottom: 80%;">53 °C</div>
+          <div class="scale-mark" style="bottom: 60%;">46 °C</div>
+          <div class="scale-mark" style="bottom: 40%;">39 °C</div>
+          <div class="scale-mark" style="bottom: 20%;">32 °C</div>
+          <div class="scale-mark" style="bottom: 0%;">25 °C</div>
         </div>
         <div id="water-level-tank" class="water-level"></div>
       </div>
