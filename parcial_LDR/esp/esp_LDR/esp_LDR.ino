@@ -9,6 +9,8 @@
 volatile float freqPWM   = 500.0f;  // Hz para la lámpara
 volatile float dutyCycle = 0.0f;    // % salida PWM (0..100)
 int estado = 0 ;
+const int led1Pin = 26; // LED 1
+const int led2Pin = 27; // LED 2
 // ————— Pines y canales —————
 static const adc1_channel_t ADC_CHANNEL  = ADC1_CHANNEL_4;  // GPIO32 para el sensor de temperatura patron
 static const adc1_channel_t ADC_CHANNEL2 = ADC1_CHANNEL_6;  // GPIO34 para el sensor de temperatura calibrar
@@ -65,22 +67,26 @@ void taskControl(void *param) {
     uint32_t mV = esp_adc_cal_raw_to_voltage(rawADC, &adc_chars);
     float mV_corr = (float)mV * adcScale + tempPatronOffset_mV; // usar mV, no mV_raw
     float adc_mV = mV_corr;      
-    float tempPatron = (adc_mV - tempPatronOffset_mV) / tempPatron_mV_per_C;
+   
 
-
-    uint32_t rawADC_Cal = adc1_get_raw(ADC_CHANNEL2);
-    uint32_t mV_Cal = esp_adc_cal_raw_to_voltage(rawADC_Cal, &adc_chars);
-    float mV_corr_Cal = (float)mV_Cal * adcScale + tempPatronOffset_mV; // usar mV, no mV_raw
-    float adc_mV_Cal = mV_corr_Cal;      
-    float tempCal = (0.0366164737258974 * adc_mV_Cal) - 24.78127748119458 - correccion;
-
-    float dt = 0.01f; // 1 ms fijo
-    float error = setPoint - tempPatron;
 //    float pidOut = calcularPID(tempPatron, dt);
-    dutyCycle = (3100- adc_mV)*100/3100;
+dutyCycle = std::max(0.0f, std::min(100.0f, (3100.0f - adc_mV) * 100.0f / (3100.0f - 1100.0f)));
  
-    // Lógica de control de la bomba
 
+    // Lógica para los LEDs
+    if (estado == 0) {
+      digitalWrite(led1Pin, LOW); // Apagar LED1
+      digitalWrite(led2Pin, HIGH); // Encender LED2
+    } else {
+      if (adc_mV > 2000) {
+        digitalWrite(led1Pin, HIGH); // Encender LED1
+        digitalWrite(led2Pin, LOW);  // Apagar LED2
+      } else {
+        digitalWrite(led1Pin, LOW); // Apagar LED1
+        // LED2 en modo blinky
+        digitalWrite(led2Pin, millis() % 500 < 250 ? HIGH : LOW);
+      }
+    }
 
     actualizarPWM();
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -114,6 +120,9 @@ void taskControl(void *param) {
 void setup() {
   Serial.begin(115200);
   while (!Serial);
+
+  pinMode(led1Pin, OUTPUT);
+  pinMode(led2Pin, OUTPUT);
 
   // --- Configurar ADC con driver-ng ---
   adc1_config_width(ADC_WIDTH_BIT_12);
@@ -210,7 +219,7 @@ void procesarComando(const String &cmd) {
     else if (p.equalsIgnoreCase("KI")) Ki        = val;
     else if (p.equalsIgnoreCase("KD")) Kd        = val;
     else if (p.equalsIgnoreCase("SP")) setPoint  = val;
-    else if (p.equalsIgnoreCase("ESTADO")) estado  = val;
+    else if (p.equalsIgnoreCase("ESTADO")) estado  = (int)val;
       // nuevos comandos para calibración
   
   portEXIT_CRITICAL(&timerMux);
