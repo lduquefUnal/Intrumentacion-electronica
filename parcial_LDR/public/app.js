@@ -271,7 +271,7 @@ const chartConfig = (def) => ({
       errPercent = ((setPoint - latestTemperatura) / setPoint) * 100.0;
     }
     let errText = isNaN(errPercent) ? '---' : `${errPercent.toFixed(2)} %`;
-    // Mostrar etiqueta "C:" junto al valor de capacitancia (usar "Capacitancia:" si prefieres)
+
     let capText = '';
     if (!isNaN(latestCap_pF)) {
       capText = ` · C: ${latestCap_pF.toFixed(2)} pF`;
