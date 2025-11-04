@@ -104,7 +104,7 @@ body {
   height: 300px;
 }
 #tank-container { position: relative; height: 300px; width: 120px; border: 1px solid #333; overflow: hidden; }
-#water-level-tank { position: absolute; bottom: 0; left: 0; right: 0; height: 0%; background: blue; transition: height 150ms linear; }
+#water-level-tank { position: absolute; bottom: 0; left: 0; right: 0; height: 0%; background: yellow; transition: height 150ms linear; }
 
 .chart-container canvas {
   width: 100% !important;
@@ -124,7 +124,7 @@ body {
 }
 
 .tank-body {
-  width: 100px;
+  width: 50px;
   height: 200px;
   border: 2px solid #555;
   border-radius: 5px;
@@ -192,4 +192,12 @@ body {
   width: 100%;
   justify-content: center;
   font-size: 1em;
+}
+
+.tank-header button {
+  padding: 0.4em 0.8em;
+  background: #4caf50;
+  border: none;
+  color: #fff;
+  cursor: pointer;
 }

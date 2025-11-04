@@ -5,7 +5,7 @@ document.addEventListener("DOMContentLoaded", function () {
   const pauseBtn = document.getElementById('pauseBtn');
   const resumeBtn = document.getElementById('resumeBtn');
   const statusDiv = document.getElementById('statusDiv');
-  const errorDisplay = document.getElementById('errorDisplay');
+  const estadoDisplay = document.getElementById('estadoDisplay');
   const thermometerLevel = document.getElementById('water-Temperatura-tank');
   const currentTemperaturaEl = document.getElementById('current-Temperatura');
   const portSelector = document.getElementById('portSelector');
@@ -14,12 +14,12 @@ document.addEventListener("DOMContentLoaded", function () {
   const statusMsg = document.getElementById('statusMsg');
   const commandSelect = document.getElementById('commandSelect');
   const valueInput = document.getElementById('valueInput');
+  const estadoBtn = document.getElementById('estado');
   let isPaused = false;
   let setPoint = 0.0;
   let error = 0.0;
   let globalTime = 0;
-  let latestTemperatura = NaN;
-  let latestCap_pF = NaN;
+
   // Ventana de tiempo y muestreo
   const sampleInterval = 1;
   const chartWindow = 300;
@@ -116,78 +116,47 @@ const chartConfig = (def) => ({
     }
   });
 
-  function updateTemp(Temperatura) {
-     if (thermometerLevel) {
-    // tomar el máximo de la escala Y del chart si está disponible, si no usar 12
-    const chart = charts['chart1'];
-    const chartYMax = chart && chart.options && chart.options.scales && chart.options.scales.y && typeof chart.options.scales.y.max === 'number'
-      ? chart.options.scales.y.max
-      : 100;
-
-    const val = Number(Temperatura);
-    const percentage = isNaN(val) ? 0 : (val / chartYMax) * 100;
-    thermometerLevel.style.height = `${Math.min(100, Math.max(0, percentage))}%`;
-    thermometerLevel.style.backgroundColor = 'red';
+function updateTankLevel(dutyCycle) {
+  const tank = document.getElementById('water-level-tank');
+  if (tank) {
+    const percentage = dutyCycle; // Limitar entre 0 y 100
+    tank.style.height = `${percentage}%`;
+    tank.style.backgroundColor = 'blue';
   }
-  if (currentTemperaturaEl) {
-    const v = Number(Temperatura);
-    currentTemperaturaEl.textContent = isNaN(v) ? '---' : v.toFixed(2);
-  }
-  }
+}
 
-  // Nuevo: manejar ambos formatos: array de objetos (JSON) o string legacy
-  socket.on('serialData', (payload) => {
-    // Si el servidor ya envía un array de objetos
-    if (Array.isArray(payload)) {
-      for (const obj of payload) {
-        const Temperatura = parseFloat(obj.TempTermist);
-        const TemperaturaPatron = parseFloat(obj.Temp_Patron);
-        const currentSetPoint = parseFloat(obj.SP);
-        const errVal = parseFloat(obj.err);
+// Manejar el botón de estado
+estadoBtn.addEventListener('click', () => {
+  const newEstado = estadoDisplay.textContent === '1' ? 0 : 1; // Alternar entre 1 y 0
+  socket.emit('sendCommand', `ESTADO=${newEstado}`);
+  estadoDisplay.textContent = newEstado; // Actualizar visualmente
+});
 
-        if (!isNaN(Temperatura)) {
-          dataBuffer.push(Temperatura);
-          latestTemperatura = Temperatura;
-        }
-        if (!isNaN(TemperaturaPatron)) {
-          dataBufferPatron.push(TemperaturaPatron);
-        }
-        if (!isNaN(currentSetPoint)) setPoint = currentSetPoint;
-        if (!isNaN(errVal)) error = errVal;
-       let capVal = NaN;
-       if (obj.C !== undefined && obj.C !== null) capVal = parseFloat(obj.C);
-       else if (obj.Ctxt) capVal = parseFloat(String(obj.Ctxt).replace(/[^\d.\-]/g, ''));
-      if (!isNaN(capVal)) latestCap_pF = capVal;
+// Procesar los datos recibidos del servidor
+socket.on('serialData', (payload) => {
+  if (Array.isArray(payload)) {
+    for (const obj of payload) {
+      const adc_mV = parseFloat(obj.adc_mV);
+      const estado = parseFloat(obj.estado);
+      const dutyCycle = parseFloat(obj.dutyCycle);
 
-        updateTemp(Temperatura);
+      if (!isNaN(adc_mV)) {
+        dataBuffer.push(adc_mV); // Solo graficar adc_mV
       }
-      return;
-    }
-
-    // Si llega legacy como string "v,sp;v2,sp2;..."
-    if (typeof payload === 'string') {
-      const dataPoints = payload.trim().split(';');
-      for (const point of dataPoints) {
-        if (!point) continue;
-        const values = point.split(',');
-        if (values.length >= 2) {
-          const Temperatura = parseFloat(values[0]);
-          const estado = parseFloat(values[1]);
-          const  dutyCycle = parseFloat(values[2])
-          if (!isNaN(adc_mV)) dataBuffer.push(adc_mV);
-          if (!isNaN(estado)) dataBuffer.push(estado);
-          if (!isNaN(dutyCycle)) dataBuffer.push(dutyCycle);
-          updateTemp(dutyCycle);
-        }
+      if (!isNaN(estado)) {
+        estadoDisplay.textContent = estado; // Mostrar el estado actual
+      }
+      if (!isNaN(dutyCycle)) {
+        updateTankLevel(dutyCycle); // Actualizar el nivel del tanque
       }
     }
-  });
-
-  socket.on('serialLine', (line) => {
-    // opcional: mostrar/guardar línea cruda
-    // console.log('raw:', line);
-  });
-
+  }
+});
+estadoBtn.addEventListener('click', () => {
+  const newEstado = estadoDisplay.textContent === '1' ? 0 : 1; // Alternar entre 1 y 0
+  socket.emit('sendCommand', `ESTADO=${newEstado}`); // Enviar el nuevo estado al ESP32
+  estadoDisplay.textContent = newEstado; // Actualizar visualmente
+});
   socket.on('commandResponse', (response) => {
     statusDiv.textContent = response;
     const isError = response.toLowerCase().startsWith('error');
@@ -200,87 +169,48 @@ const chartConfig = (def) => ({
     }, 3000);
   });
 
-  function updateCharts() {
-    if (isPaused) {
-      setTimeout(updateCharts, chartStep);
-      return;
-    }
+function updateCharts() {
+  if (isPaused) {
+    setTimeout(updateCharts, chartStep);
+    return;
+  }
 
-    const start = performance.now();
-    let time = globalTime;
-    const chart = charts['chart1'];
+  const start = performance.now();
+  let time = globalTime;
+  const chart = charts['chart1'];
 
   if (chart) {
-      // Asignar los datasets correctamente según tu chartConfig
-      const setpointDataset = chart.data.datasets[0];   // Setpoint (rojo, dashed)
-      const patronDataset = chart.data.datasets[1];     // T. Patrón (azul)
-      const calibrarDataset = chart.data.datasets[2];   // T. a Calibrar (verde)
+    const adcDataset = chart.data.datasets[0]; // Línea del adc_mV
 
-      // Asumimos que dataBuffer (TempTermist) y dataBufferPatron (Temp_patron)
-      // reciben datos al mismo tiempo.
-      const numPoints = dataBuffer.length;
-      for (let i = 0; i < numPoints; i++) {
-        const tempTermistVal = dataBuffer[i];
-        const tempPatronVal = dataBufferPatron[i];
-
-        // Añadir T. a Calibrar (TempTermist) al dataset 2
-        if (tempTermistVal !== undefined) {
-          calibrarDataset.data.push({ x: time, y: tempTermistVal });
-        }
-        
-        // Añadir T. Patrón (Temp_patron) al dataset 1
-        if (tempPatronVal !== undefined) {
-          patronDataset.data.push({ x: time, y: tempPatronVal });
-        }
-
-        // Incrementar el tiempo UNA VEZ por cada par de puntos
-        time += sampleInterval;
+    const numPoints = dataBuffer.length;
+    for (let i = 0; i < numPoints; i++) {
+      const adcVal = dataBuffer[i];
+      if (adcVal !== undefined) {
+        adcDataset.data.push({ x: time, y: adcVal });
       }
-
-      // Limpiar los buffers de datos ya procesados
-      dataBuffer.length = 0;
-      dataBufferPatron.length = 0;
-
-      // Eliminar puntos viejos de los datasets de datos
-      while (calibrarDataset.data.length > maxPoints) {
-        calibrarDataset.data.shift();
-      }
-      while (patronDataset.data.length > maxPoints) {
-        patronDataset.data.shift();
-      }
-
-      // Actualizar el dataset del Setpoint (línea plana discontinua)
-      // Usa la variable global 'setPoint'
-      setpointDataset.data = [
-        { x: time - chartWindow, y: setPoint },
-        { x: time, y: setPoint }
-      ];
-
-      // Actualizar los límites del eje X para crear el efecto de scroll
-      chart.options.scales.x.min = time - chartWindow;
-      chart.options.scales.x.max = time;
-
-      chart.update('none'); // Actualizar el gráfico sin animación
+      time += sampleInterval;
     }
 
-    globalTime = time;
-        errorDisplay.textContent = isNaN(error) ? '---' : error.toFixed(2);
-        // Mostrar error porcentual respecto al setPoint y capacitancia al lado
-    let errPercent = NaN;
-    if (!isNaN(setPoint) && setPoint !== 0 && !isNaN(latestTemperatura)) {
-      errPercent = ((setPoint - latestTemperatura) / setPoint) * 100.0;
-    }
-    let errText = isNaN(errPercent) ? '---' : `${errPercent.toFixed(2)} %`;
+    // Limpiar el buffer de datos ya procesados
+    dataBuffer.length = 0;
 
-    let capText = '';
-    if (!isNaN(latestCap_pF)) {
-      capText = ` · C: ${latestCap_pF.toFixed(2)} pF`;
+    // Eliminar puntos viejos
+    while (adcDataset.data.length > maxPoints) {
+      adcDataset.data.shift();
     }
-    errorDisplay.textContent = `${errText}${capText}`;
 
-    const elapsed = performance.now() - start;
-    setTimeout(updateCharts, Math.max(0, chartStep - elapsed));
+    // Actualizar los límites del eje X
+    chart.options.scales.x.min = time - chartWindow;
+    chart.options.scales.x.max = time;
+
+    chart.update('none'); // Actualizar el gráfico sin animación
   }
+
+  globalTime = time;
+
+  const elapsed = performance.now() - start;
+  setTimeout(updateCharts, Math.max(0, chartStep - elapsed));
+}
 
   // Envío de comandos (usa commandSelect y valueInput definidos arriba)
   function sendCommand() {
