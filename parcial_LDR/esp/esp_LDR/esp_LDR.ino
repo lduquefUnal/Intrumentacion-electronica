@@ -8,7 +8,7 @@
 // ————— Parámetros PWM y calibración ADC —————
 volatile float freqPWM   = 500.0f;  // Hz para la lámpara
 volatile float dutyCycle = 0.0f;    // % salida PWM (0..100)
-int estado = 0 ;
+int estado = 1 ;
 const int led1Pin = 26; // LED 1
 const int led2Pin = 27; // LED 2
 // ————— Pines y canales —————
@@ -74,9 +74,9 @@ dutyCycle = std::max(0.0f, std::min(100.0f, (3100.0f - adc_mV) * 100.0f / (3100.
  
 
     // Lógica para los LEDs
-    if (estado == 0) {
+    if (estado == 1) {
       digitalWrite(led1Pin, LOW); // Apagar LED1
-      digitalWrite(led2Pin, HIGH); // Encender LED2
+      digitalWrite(led2Pin, LOW); // Encender LED2
     } else {
       if (adc_mV > 2000) {
         digitalWrite(led1Pin, HIGH); // Encender LED1
@@ -99,10 +99,15 @@ dutyCycle = std::max(0.0f, std::min(100.0f, (3100.0f - adc_mV) * 100.0f / (3100.
       idx += snprintf(linea + idx, sizeof(linea) - idx, "[");
     }
 
+    int estadoSeguro;
+    portENTER_CRITICAL(&timerMux);
+    estadoSeguro = estado;
+    portEXIT_CRITICAL(&timerMux);
+
     // objeto JSON por muestra (usar coma como separador)
     idx += snprintf(linea + idx, sizeof(linea) - idx,
-                     "{\"adc_mV\":%.2f, \"estado\":%.2f, \"dutyCycle\":%.2f}%s",
-                     adc_mV, estado, dutyCycle, 
+                     "{\"adc_mV\":%.2f, \"estado\":%d, \"dutyCycle\":%.2f}%s",
+                     adc_mV, estadoSeguro, dutyCycle, 
                      (count + 1 == NUM_DATOS) ? "" : "," );
 
     count++;
@@ -208,21 +213,21 @@ void actualizarPWM() {
 
 void procesarComando(const String &cmd) {
   int idx = cmd.indexOf('=');
-  if (idx < 0) { Serial.println("ERROR"); return; }
-  String p = cmd.substring(0,idx), v = cmd.substring(idx+1);
-  float  val = v.toFloat();
-  
+  if (idx < 0) {
+    Serial.println("ERROR: Comando inválido");
+    return;
+  }
+  String p = cmd.substring(0, idx), v = cmd.substring(idx + 1);
+  float val = v.toFloat();
+
   portENTER_CRITICAL(&timerMux);
-    if      (p.equalsIgnoreCase("FP")) freqPWM   = val, actualizarPWM();
-    else if (p.equalsIgnoreCase("DC")) dutyCycle = val, actualizarPWM();
-    else if (p.equalsIgnoreCase("KP")) Kp        = val;
-    else if (p.equalsIgnoreCase("KI")) Ki        = val;
-    else if (p.equalsIgnoreCase("KD")) Kd        = val;
-    else if (p.equalsIgnoreCase("SP")) setPoint  = val;
-    else if (p.equalsIgnoreCase("ESTADO")) estado  = (int)val;
-      // nuevos comandos para calibración
-  
+  if (p.equalsIgnoreCase("ESTADO")) {
+    estado = (int)val; // Actualizar el estado
+    Serial.print("Estado actualizado a: ");
+    Serial.println(estado);
+  }
   portEXIT_CRITICAL(&timerMux);
+
   Serial.println("OK");
 }
 

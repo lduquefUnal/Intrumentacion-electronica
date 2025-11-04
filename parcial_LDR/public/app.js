@@ -19,7 +19,7 @@ document.addEventListener("DOMContentLoaded", function () {
   let setPoint = 0.0;
   let error = 0.0;
   let globalTime = 0;
-
+  let currentEstado = 0;  
   // Ventana de tiempo y muestreo
   const sampleInterval = 1;
   const chartWindow = 300;
@@ -144,6 +144,7 @@ socket.on('serialData', (payload) => {
         dataBuffer.push(adc_mV); // Solo graficar adc_mV
       }
       if (!isNaN(estado)) {
+        currentEstado = estado; 
         estadoDisplay.textContent = estado; // Mostrar el estado actual
       }
       if (!isNaN(dutyCycle)) {
@@ -153,9 +154,8 @@ socket.on('serialData', (payload) => {
   }
 });
 estadoBtn.addEventListener('click', () => {
-  const newEstado = estadoDisplay.textContent === '1' ? 0 : 1; // Alternar entre 1 y 0
+  const newEstado = currentEstado === 1 ? 0 : 1; // Alternar entre 1 y 0
   socket.emit('sendCommand', `ESTADO=${newEstado}`); // Enviar el nuevo estado al ESP32
-  estadoDisplay.textContent = newEstado; // Actualizar visualmente
 });
   socket.on('commandResponse', (response) => {
     statusDiv.textContent = response;
