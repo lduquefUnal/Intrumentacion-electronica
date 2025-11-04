@@ -18,7 +18,7 @@ volatile float tempPatronOffset_mV = 0.0f;
 volatile float tempPatron_mV_per_C = 10.0f;
 volatile float adcScale = 1.0f;
 
-volatile float correccion = 6.0f;
+volatile float correccion = 4.0f;
 
 volatile float tempCalOffset_mV = 0.0f;  // sumar (mV) - mantenimiento de calibración ADC
 volatile float tempCal_mV_per_C     = 1.0f;  
@@ -73,7 +73,7 @@ void taskControl(void *param) {
     uint32_t mV_Cal = esp_adc_cal_raw_to_voltage(rawADC_Cal, &adc_chars);
     float mV_corr_Cal = (float)mV_Cal * adcScale + tempPatronOffset_mV; // usar mV, no mV_raw
     float adc_mV_Cal = mV_corr_Cal;      
-    float tempCal = (0.05285354182821799 * adc_mV_Cal) - 49.655234285756165 - correccion;
+    float tempCal = (0.0366164737258974 * adc_mV_Cal) - 24.78127748119458 - correccion;
 
     float dt = 0.01f; // 1 ms fijo
     float error = setPoint - tempPatron;
@@ -245,11 +245,6 @@ void procesarComando(const String &cmd) {
     else if (p.equalsIgnoreCase("KI")) Ki        = val;
     else if (p.equalsIgnoreCase("KD")) Kd        = val;
     else if (p.equalsIgnoreCase("SP")) setPoint  = val;
-    else if (p.equelsIgnoreCase("turn=1") turn = val)
-    {
-      /* code */
-    }
-    
       // nuevos comandos para calibración
     else if (p.equalsIgnoreCase("ADCOFF")) tempPatronOffset_mV = val;     // en mV (ej. -30)
     else if (p.equalsIgnoreCase("ADCSCL")) adcScale     = val;     // multiplicador (ej. 0.78)
