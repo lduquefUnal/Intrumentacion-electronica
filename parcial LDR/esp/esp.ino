@@ -13,7 +13,7 @@ volatile float dutyCycle = 0.0f;    // % salida PWM (0..100)
 static const adc1_channel_t ADC_CHANNEL  = ADC1_CHANNEL_4;  // GPIO32 para el sensor de temperatura patron
 static const adc1_channel_t ADC_CHANNEL2 = ADC1_CHANNEL_6;  // GPIO34 para el sensor de temperatura calibrar
 const int pwmPin = 25;         
-const int estado  = 0 ;  
+int estado  = 0 ;  
 
 
 
@@ -57,27 +57,22 @@ void taskControl(void *param) {
     // --- Leer y calibrar ADC del sensor de LDR (GPIO32) ---
     uint32_t rawADC = adc1_get_raw(ADC_CHANNEL);
     uint32_t mV = esp_adc_cal_raw_to_voltage(rawADC, &adc_chars);
-    float mV_corr = (float)mV * adcScale + tempPatronOffset_mV; // usar mV, no mV_raw
+    float mV_corr = (float)mV ;
     float adc_mV = mV_corr;      
 
 
 
     uint32_t rawADC_Cal = adc1_get_raw(ADC_CHANNEL2);
     uint32_t mV_Cal = esp_adc_cal_raw_to_voltage(rawADC_Cal, &adc_chars);
-    float mV_corr_Cal = (float)mV_Cal * adcScale + tempPatronOffset_mV; // usar mV, no mV_raw
+    float mV_corr_Cal = (float)mV_Cal ;
     float adc_mV_Cal = mV_corr_Cal;      
 
 
     float dt = 0.01f; // 1 ms fijo
-    float error = setPoint - tempPatron;
+
 
     // Lógica de control de la bomba
-    if (pidOut > 0.0f) {
-      dutyCycle = constrain(pidOut, 0.0f, 100.0f);
-    } else {
-      dutyCycle = 0.0f;
-      resetIntegral();
-    }
+     float dutyCycle = (adc_mV/3200)*100;
 
     actualizarPWM();
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -207,14 +202,11 @@ void procesarComando(const String &cmd) {
     else if (p.equalsIgnoreCase("KI")) Ki        = val;
     else if (p.equalsIgnoreCase("KD")) Kd        = val;
     else if (p.equalsIgnoreCase("SP")) setPoint  = val;
-    else if (p.equelsIgnoreCase("turn=1") turn = val)
+    else if (p.equalsIgnoreCase("ESTADO")) estado = val;
     {
       /* code */
     }
     
-      // nuevos comandos para calibración
-    else if (p.equalsIgnoreCase("ADCOFF")) tempPatronOffset_mV = val;     // en mV (ej. -30)
-    else if (p.equalsIgnoreCase("ADCSCL")) adcScale     = val;     // multiplicador (ej. 0.78)
   
   portEXIT_CRITICAL(&timerMux);
   Serial.println("OK");
