@@ -8,14 +8,20 @@
 // ————— Parámetros PWM y calibración ADC —————
 volatile float freqPWM   = 500.0f;  // Hz para la lámpara
 volatile float dutyCycle = 0.0f;    // % salida PWM (0..100)
-
+int estado = 0 ;
 // ————— Pines y canales —————
 static const adc1_channel_t ADC_CHANNEL  = ADC1_CHANNEL_4;  // GPIO32 para el sensor de temperatura patron
 static const adc1_channel_t ADC_CHANNEL2 = ADC1_CHANNEL_6;  // GPIO34 para el sensor de temperatura calibrar
-const int pwmPin = 25;         
-int estado  = 0 ;  
+const int pwmPin = 25;                                      // PWM para la bombillo de calor
+// —————  calibración ADC —————
+volatile float tempPatronOffset_mV = 0.0f;
+volatile float tempPatron_mV_per_C = 10.0f;
+volatile float adcScale = 1.0f;
 
+volatile float correccion = 4.0f;
 
+volatile float tempCalOffset_mV = 0.0f;  // sumar (mV) - mantenimiento de calibración ADC
+volatile float tempCal_mV_per_C     = 1.0f;  
 
 const ledc_timer_t     PWM_TIMER      = LEDC_TIMER_0;
 const ledc_channel_t   PWM_CHANNEL    = LEDC_CHANNEL_0; //pin 25
@@ -54,25 +60,27 @@ void taskControl(void * param);
 
 void taskControl(void *param) {
   while (true) {
-    // --- Leer y calibrar ADC del sensor de LDR (GPIO32) ---
+    // --- Leer y calibrar ADC del sensor de nivel (GPIO32) ---
     uint32_t rawADC = adc1_get_raw(ADC_CHANNEL);
     uint32_t mV = esp_adc_cal_raw_to_voltage(rawADC, &adc_chars);
-    float mV_corr = (float)mV ;
+    float mV_corr = (float)mV * adcScale + tempPatronOffset_mV; // usar mV, no mV_raw
     float adc_mV = mV_corr;      
-
+    float tempPatron = (adc_mV - tempPatronOffset_mV) / tempPatron_mV_per_C;
 
 
     uint32_t rawADC_Cal = adc1_get_raw(ADC_CHANNEL2);
     uint32_t mV_Cal = esp_adc_cal_raw_to_voltage(rawADC_Cal, &adc_chars);
-    float mV_corr_Cal = (float)mV_Cal ;
+    float mV_corr_Cal = (float)mV_Cal * adcScale + tempPatronOffset_mV; // usar mV, no mV_raw
     float adc_mV_Cal = mV_corr_Cal;      
-
+    float tempCal = (0.0366164737258974 * adc_mV_Cal) - 24.78127748119458 - correccion;
 
     float dt = 0.01f; // 1 ms fijo
-
-
+    float error = setPoint - tempPatron;
+//    float pidOut = calcularPID(tempPatron, dt);
+    dutyCycle = (3100- adc_mV)*100/3100;
+ 
     // Lógica de control de la bomba
-     float dutyCycle = (adc_mV/3200)*100;
+
 
     actualizarPWM();
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -84,11 +92,11 @@ void taskControl(void *param) {
       // Añadir corchete de apertura para formar un array JSON válido
       idx += snprintf(linea + idx, sizeof(linea) - idx, "[");
     }
-    
+
     // objeto JSON por muestra (usar coma como separador)
     idx += snprintf(linea + idx, sizeof(linea) - idx,
-                     "{\"adc_mV\":%.2f,\"pwm_duty\":%.2f, \"estado\":%.2f}%s",
-                     adc_mV, dutyCycle, estado,
+                     "{\"adc_mV\":%.2f, \"estado\":%.2f, \"dutyCycle\":%.2f}%s",
+                     adc_mV, estado, dutyCycle, 
                      (count + 1 == NUM_DATOS) ? "" : "," );
 
     count++;
@@ -136,7 +144,7 @@ void loop() {
 }
 
 
-
+  
 void inicializarPWM() {
   // Configura timer LEDC
   ledc_timer_config_t tcfg = {
@@ -202,11 +210,8 @@ void procesarComando(const String &cmd) {
     else if (p.equalsIgnoreCase("KI")) Ki        = val;
     else if (p.equalsIgnoreCase("KD")) Kd        = val;
     else if (p.equalsIgnoreCase("SP")) setPoint  = val;
-    else if (p.equalsIgnoreCase("ESTADO")) estado = val;
-    {
-      /* code */
-    }
-    
+    else if (p.equalsIgnoreCase("ESTADO")) estado  = val;
+      // nuevos comandos para calibración
   
   portEXIT_CRITICAL(&timerMux);
   Serial.println("OK");
@@ -218,8 +223,3 @@ bool IRAM_ATTR onTimer(gptimer_handle_t, const gptimer_alarm_event_data_t*, void
   return xHigherPriorityTaskWoken == pdTRUE;
 }
 
-void resetIntegral() {
-  for (int i = 0; i < N; ++i) errBuf[i] = 0.0f;
-  bufIdx = 0;
-  sumErr = 0.0f;
-}

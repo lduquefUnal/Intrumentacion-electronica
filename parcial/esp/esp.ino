@@ -8,7 +8,7 @@
 // ————— Parámetros PWM y calibración ADC —————
 volatile float freqPWM   = 500.0f;  // Hz para la lámpara
 volatile float dutyCycle = 0.0f;    // % salida PWM (0..100)
-
+int estado = 0;
 // ————— Pines y canales —————
 static const adc1_channel_t ADC_CHANNEL  = ADC1_CHANNEL_4;  // GPIO32 para el sensor de temperatura patron
 static const adc1_channel_t ADC_CHANNEL2 = ADC1_CHANNEL_6;  // GPIO34 para el sensor de temperatura calibrar
@@ -245,15 +245,8 @@ void procesarComando(const String &cmd) {
     else if (p.equalsIgnoreCase("KI")) Ki        = val;
     else if (p.equalsIgnoreCase("KD")) Kd        = val;
     else if (p.equalsIgnoreCase("SP")) setPoint  = val;
-    else if (p.equelsIgnoreCase("turn=1") turn = val)
-    {
-      /* code */
-    }
+    else if (p.equalsIgnoreCase("ESTADO")) estado = val;
     
-      // nuevos comandos para calibración
-    else if (p.equalsIgnoreCase("ADCOFF")) tempPatronOffset_mV = val;     // en mV (ej. -30)
-    else if (p.equalsIgnoreCase("ADCSCL")) adcScale     = val;     // multiplicador (ej. 0.78)
-  
   portEXIT_CRITICAL(&timerMux);
   Serial.println("OK");
 }

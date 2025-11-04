@@ -122,7 +122,7 @@ const chartConfig = (def) => ({
     const chart = charts['chart1'];
     const chartYMax = chart && chart.options && chart.options.scales && chart.options.scales.y && typeof chart.options.scales.y.max === 'number'
       ? chart.options.scales.y.max
-      : 12;
+      : 100;
 
     const val = Number(Temperatura);
     const percentage = isNaN(val) ? 0 : (val / chartYMax) * 100;
@@ -172,10 +172,12 @@ const chartConfig = (def) => ({
         const values = point.split(',');
         if (values.length >= 2) {
           const Temperatura = parseFloat(values[0]);
-          const currentSetPoint = parseFloat(values[1]);
-          if (!isNaN(Temperatura)) dataBuffer.push(Temperatura);
-          if (!isNaN(currentSetPoint)) setPoint = currentSetPoint;
-          updateTemp(Temperatura);
+          const estado = parseFloat(values[1]);
+          const  dutyCycle = parseFloat(values[2])
+          if (!isNaN(adc_mV)) dataBuffer.push(adc_mV);
+          if (!isNaN(estado)) dataBuffer.push(estado);
+          if (!isNaN(dutyCycle)) dataBuffer.push(dutyCycle);
+          updateTemp(dutyCycle);
         }
       }
     }
