@@ -124,7 +124,7 @@ body {
 }
 
 .tank-body {
-  width: 50px;
+  width: 100px;
   height: 200px;
   border: 2px solid #555;
   border-radius: 5px;
@@ -136,7 +136,7 @@ body {
 
 .water-level {
   width: 100%;
-  background-color: #007bff; /* Color azul para el agua */
+  background-color: #fdd830; /* Color azul para el agua */
   transition: height 0.5s ease-in-out; /* Transición suave al cambiar de nivel */
   position: absolute;
   bottom: 0;
