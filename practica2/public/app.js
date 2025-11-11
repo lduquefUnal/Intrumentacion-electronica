@@ -6,8 +6,8 @@ document.addEventListener("DOMContentLoaded", function () {
   const resumeBtn = document.getElementById('resumeBtn');
   const statusDiv = document.getElementById('statusDiv');
   const errorDisplay = document.getElementById('errorDisplay');
-  const thermometerLevel = document.getElementById('water-Temperatura-tank');
-  const currentTemperaturaEl = document.getElementById('current-Temperatura');
+  const thermometerLevel = document.getElementById('water-level-tank');
+  const currentTemperaturaEl = document.getElementById('current-level');
   const portSelector = document.getElementById('portSelector');
   const connectBtn = document.getElementById('connectBtn');
   const statusLed = document.getElementById('statusLed');
