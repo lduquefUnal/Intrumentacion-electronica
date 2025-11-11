@@ -39,7 +39,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
   const charts = {};
   const dataBuffer = [];
-  const dataBufferPatron = [];
   
   pauseBtn.addEventListener('click', () => {
     isPaused = true;
@@ -82,17 +81,7 @@ const chartConfig = (def) => ({
         pointRadius: 0.1,
         borderWidth: 1
       },
-      // Dataset 2: T. Patrón
-      {
-        label: 'T. Patrón (°C)',
-        borderColor: 'blue',
-        data: [],
-        fill: false,
-        tension: 0.1,
-        pointRadius: 0.1,
-        borderWidth: 1
-      },
-      // Dataset 3: T. a Calibrar
+      // Dataset 2: T. a Calibrar
       {
         label: 'T. a Calibrar (°C)',
         borderColor: 'green',
@@ -171,16 +160,12 @@ const chartConfig = (def) => ({
     if (Array.isArray(payload)) {
       for (const obj of payload) {
         const Temperatura = parseFloat(obj.TempTermist);
-        const TemperaturaPatron = parseFloat(obj.Temp_Patron);
         const currentSetPoint = parseFloat(obj.SP);
         const errVal = parseFloat(obj.err);
 
         if (!isNaN(Temperatura)) {
           dataBuffer.push(Temperatura);
           latestTemperatura = Temperatura;
-        }
-        if (!isNaN(TemperaturaPatron)) {
-          dataBufferPatron.push(TemperaturaPatron);
         }
         if (!isNaN(currentSetPoint)) setPoint = currentSetPoint;
         if (!isNaN(errVal)) error = errVal;
@@ -236,41 +221,22 @@ const chartConfig = (def) => ({
 
   if (chart) {
       // Asignar los datasets correctamente según tu chartConfig
-      const setpointDataset = chart.data.datasets[0];   // Setpoint (rojo, dashed)
-      const patronDataset = chart.data.datasets[1];     // T. Patrón (azul)
-      const calibrarDataset = chart.data.datasets[2];   // T. a Calibrar (verde)
+      const setpointDataset = chart.data.datasets[0]; // Setpoint (rojo, dashed)
+      const calibrarDataset = chart.data.datasets[1]; // T. a Calibrar (verde)
 
-      // Procesar buffer de 'T. a Calibrar' (verde)
+      // Procesar el buffer de datos de temperatura
       dataBuffer.forEach(tempTermistVal => {
         calibrarDataset.data.push({ x: time, y: tempTermistVal });
         time += sampleInterval;
       });
 
-      // Guardamos el tiempo hasta donde llegó la primera línea
-      let timeAfterCalibrar = time;
-      // Reiniciamos el tiempo para la segunda línea para que se dibuje en el mismo lapso
-      time = globalTime; 
-
-      // Procesar buffer de 'T. Patrón' (azul)
-      dataBufferPatron.forEach(tempPatronVal => {
-        patronDataset.data.push({ x: time, y: tempPatronVal });
-        time += sampleInterval;
-      });
-
-      // El tiempo global avanza hasta el punto máximo alcanzado por cualquiera de las dos líneas
-      time = Math.max(time, timeAfterCalibrar);
-
       // Limpiar los buffers de datos ya procesados
       dataBuffer.length = 0;
-      dataBufferPatron.length = 0;
 
       // Eliminar puntos viejos de los datasets de datos
       if (chartMode === 'continuous') {
         while (calibrarDataset.data.length > maxPoints) {
           calibrarDataset.data.shift();
-        }
-        while (patronDataset.data.length > maxPoints) {
-          patronDataset.data.shift();
         }
       }
 
