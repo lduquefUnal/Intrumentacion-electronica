@@ -23,8 +23,8 @@ document.addEventListener("DOMContentLoaded", function () {
   let chartMode = 'continuous'; // 'continuous' o 'absolute'
 
   // Ventana de tiempo y muestreo
-  const sampleInterval = 1;
-  const chartWindow = 300;
+  const sampleInterval = 10; // Intervalo de muestreo REAL del ESP32 en ms
+  const chartWindow = 30000; // Ventana de 30 segundos (en ms)
   const chartStep = 1000 / 30;
   const maxPoints = Math.ceil(chartWindow / sampleInterval);
 
@@ -112,7 +112,14 @@ const chartConfig = (def) => ({
           type: 'linear',
           min: 0,
           max: chartWindow,
-          title: { display: true, text: 'Tiempo (ms)' }
+          title: { display: true, text: 'Tiempo (s)' },
+          ticks: {
+            // Formatear los ticks del eje X para mostrar segundos
+            callback: function(value, index, values) {
+              // El valor está en milisegundos, lo convertimos a segundos
+              return (value / 1000).toFixed(1);
+            }
+          }
         },
         y: {
           min: def.yRange.min,
@@ -271,6 +278,7 @@ const chartConfig = (def) => ({
       ];
 
       // Actualizar los límites del eje X para crear el efecto de scroll
+      // 'time' está en milisegundos
       if (chartMode === 'continuous') {
         chart.options.scales.x.min = time - chartWindow;
         chart.options.scales.x.max = time;
