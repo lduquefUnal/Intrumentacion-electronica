@@ -233,21 +233,21 @@ const chartConfig = (def) => ({
       const patronDataset = chart.data.datasets[1];     // T. Patrón (azul)
       const calibrarDataset = chart.data.datasets[2];   // T. a Calibrar (verde)
 
-      // Procesar y añadir puntos para 'T. a Calibrar' (verde)
-      dataBuffer.forEach(tempTermistVal => {
-        calibrarDataset.data.push({ x: time, y: tempTermistVal });
+      // Sincronizar el procesamiento para evitar que la gráfica se detenga.
+      // Usamos un solo bucle y una sola variable de tiempo.
+      const numPoints = Math.max(dataBuffer.length, dataBufferPatron.length);
+      for (let i = 0; i < numPoints; i++) {
+        const tempTermistVal = dataBuffer[i];
+        const tempPatronVal = dataBufferPatron[i];
+
+        // Añadir punto a la línea verde si existe
+        if (tempTermistVal !== undefined) calibrarDataset.data.push({ x: time, y: tempTermistVal });
+        // Añadir punto a la línea azul si existe
+        if (tempPatronVal !== undefined) patronDataset.data.push({ x: time, y: tempPatronVal });
+
+        // Incrementar el tiempo UNA VEZ por cada "paso de tiempo"
         time += sampleInterval;
-      });
-
-
-      let patronTime = globalTime;
-      dataBufferPatron.forEach(tempPatronVal => {
-        patronDataset.data.push({ x: patronTime, y: tempPatronVal });
-        patronTime += sampleInterval;
-      });
-
-      // El tiempo global avanza según el buffer que tenga más datos (o el principal)
-      if (patronTime > time) time = patronTime;
+      }
 
       // Limpiar los buffers de datos ya procesados
       dataBuffer.length = 0;
@@ -291,11 +291,8 @@ const chartConfig = (def) => ({
     }
     let errText = isNaN(errPercent) ? '---' : `${errPercent.toFixed(2)} °C`;
     // Mostrar etiqueta "C:" junto al valor de capacitancia (usar "Capacitancia:" si prefieres)
-    let capText = '';
-    if (!isNaN(latestCap_pF)) {
-      capText = ` · C: ${latestCap_pF.toFixed(2)} pF`;
-    }
-    errorDisplay.textContent = `${errText}${capText}`;
+
+    errorDisplay.textContent = `${errText}`;
 
     const elapsed = performance.now() - start;
     setTimeout(updateCharts, Math.max(0, chartStep - elapsed));
