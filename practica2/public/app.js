@@ -121,11 +121,18 @@ const chartConfig = (def) => ({
     // tomar el máximo de la escala Y del chart si está disponible, si no usar 12
     const chart = charts['chart1'];
     const chartYMax = chart && chart.options && chart.options.scales && chart.options.scales.y && typeof chart.options.scales.y.max === 'number'
-      ? chart.options.scales.y.max
-      : 12;
+      ? chart.options.scales.y.max // Será 60
+      : 60;
+    const chartYMin = chart && chart.options && chart.options.scales && chart.options.scales.y && typeof chart.options.scales.y.min === 'number'
+      ? chart.options.scales.y.min // Será 25
+      : 25;
 
     const val = Number(Temperatura);
-    const percentage = isNaN(val) ? 0 : (val / chartYMax) * 100;
+    const range = chartYMax - chartYMin;
+    const correctedValue = val - chartYMin;
+    
+    const percentage = (isNaN(val) || range <= 0) ? 0 : (correctedValue / range) * 100;
+
     thermometerLevel.style.height = `${Math.min(100, Math.max(0, percentage))}%`;
     thermometerLevel.style.backgroundColor = 'red';
   }
