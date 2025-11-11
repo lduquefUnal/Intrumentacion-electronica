@@ -214,26 +214,21 @@ const chartConfig = (def) => ({
       const patronDataset = chart.data.datasets[1];     // T. Patrón (azul)
       const calibrarDataset = chart.data.datasets[2];   // T. a Calibrar (verde)
 
-      // Asumimos que dataBuffer (TempTermist) y dataBufferPatron (Temp_patron)
-      // reciben datos al mismo tiempo.
-      const numPoints = dataBuffer.length;
-      for (let i = 0; i < numPoints; i++) {
-        const tempTermistVal = dataBuffer[i];
-        const tempPatronVal = dataBufferPatron[i];
-
-        // Añadir T. a Calibrar (TempTermist) al dataset 2
-        if (tempTermistVal !== undefined) {
-          calibrarDataset.data.push({ x: time, y: tempTermistVal });
-        }
-        
-        // Añadir T. Patrón (Temp_patron) al dataset 1
-        if (tempPatronVal !== undefined) {
-          patronDataset.data.push({ x: time, y: tempPatronVal });
-        }
-
-        // Incrementar el tiempo UNA VEZ por cada par de puntos
+      // Procesar y añadir puntos para 'T. a Calibrar' (verde)
+      dataBuffer.forEach(tempTermistVal => {
+        calibrarDataset.data.push({ x: time, y: tempTermistVal });
         time += sampleInterval;
-      }
+      });
+
+
+      let patronTime = globalTime;
+      dataBufferPatron.forEach(tempPatronVal => {
+        patronDataset.data.push({ x: patronTime, y: tempPatronVal });
+        patronTime += sampleInterval;
+      });
+
+      // El tiempo global avanza según el buffer que tenga más datos (o el principal)
+      if (patronTime > time) time = patronTime;
 
       // Limpiar los buffers de datos ya procesados
       dataBuffer.length = 0;
