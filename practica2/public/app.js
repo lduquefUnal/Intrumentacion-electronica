@@ -23,7 +23,7 @@ document.addEventListener("DOMContentLoaded", function () {
   let chartMode = 'continuous'; // 'continuous' o 'absolute'
 
   // Ventana de tiempo y muestreo
-  const sampleInterval = 10; // Intervalo de muestreo REAL del ESP32 en ms
+  const sampleInterval = 15; // Intervalo de muestreo REAL del ESP32 en ms
   const chartWindow = 30000; // Ventana de 30 segundos (en ms)
   const chartStep = 1000 / 30;
   const maxPoints = Math.ceil(chartWindow / sampleInterval);
@@ -240,21 +240,25 @@ const chartConfig = (def) => ({
       const patronDataset = chart.data.datasets[1];     // T. Patrón (azul)
       const calibrarDataset = chart.data.datasets[2];   // T. a Calibrar (verde)
 
-      // Sincronizar el procesamiento para evitar que la gráfica se detenga.
-      // Usamos un solo bucle y una sola variable de tiempo.
-      const numPoints = Math.max(dataBuffer.length, dataBufferPatron.length);
-      for (let i = 0; i < numPoints; i++) {
-        const tempTermistVal = dataBuffer[i];
-        const tempPatronVal = dataBufferPatron[i];
-
-        // Añadir punto a la línea verde si existe
-        if (tempTermistVal !== undefined) calibrarDataset.data.push({ x: time, y: tempTermistVal });
-        // Añadir punto a la línea azul si existe
-        if (tempPatronVal !== undefined) patronDataset.data.push({ x: time, y: tempPatronVal });
-
-        // Incrementar el tiempo UNA VEZ por cada "paso de tiempo"
+      // Procesar buffer de 'T. a Calibrar' (verde)
+      dataBuffer.forEach(tempTermistVal => {
+        calibrarDataset.data.push({ x: time, y: tempTermistVal });
         time += sampleInterval;
-      }
+      });
+
+      // Guardamos el tiempo hasta donde llegó la primera línea
+      let timeAfterCalibrar = time;
+      // Reiniciamos el tiempo para la segunda línea para que se dibuje en el mismo lapso
+      time = globalTime; 
+
+      // Procesar buffer de 'T. Patrón' (azul)
+      dataBufferPatron.forEach(tempPatronVal => {
+        patronDataset.data.push({ x: time, y: tempPatronVal });
+        time += sampleInterval;
+      });
+
+      // El tiempo global avanza hasta el punto máximo alcanzado por cualquiera de las dos líneas
+      time = Math.max(time, timeAfterCalibrar);
 
       // Limpiar los buffers de datos ya procesados
       dataBuffer.length = 0;
