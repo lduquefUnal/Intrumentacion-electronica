@@ -14,12 +14,14 @@ document.addEventListener("DOMContentLoaded", function () {
   const statusMsg = document.getElementById('statusMsg');
   const commandSelect = document.getElementById('commandSelect');
   const valueInput = document.getElementById('valueInput');
+  const toggleModeBtn = document.getElementById('toggleModeBtn');
   let isPaused = false;
   let setPoint = 0.0;
   let error = 0.0;
   let globalTime = 0;
   let latestTemperatura = NaN;
-  let latestCap_pF = NaN;
+  let chartMode = 'continuous'; // 'continuous' o 'absolute'
+
   // Ventana de tiempo y muestreo
   const sampleInterval = 1;
   const chartWindow = 300;
@@ -49,6 +51,20 @@ document.addEventListener("DOMContentLoaded", function () {
     pauseBtn.disabled = false;
     resumeBtn.disabled = true;
   });
+
+  toggleModeBtn.addEventListener('click', () => {
+    if (chartMode === 'continuous') {
+      chartMode = 'absolute';
+      toggleModeBtn.textContent = 'Modo: Absoluto';
+    } else {
+      chartMode = 'continuous';
+      toggleModeBtn.textContent = 'Modo: Continuo';
+    }
+    // Forzar una actualización de la vista del gráfico al cambiar de modo
+    const chart = charts['chart1'];
+    if (chart) chart.update('none');
+  });
+
 
 const chartConfig = (def) => ({
   type: 'line',
@@ -161,10 +177,6 @@ const chartConfig = (def) => ({
         }
         if (!isNaN(currentSetPoint)) setPoint = currentSetPoint;
         if (!isNaN(errVal)) error = errVal;
-       let capVal = NaN;
-       if (obj.C !== undefined && obj.C !== null) capVal = parseFloat(obj.C);
-       else if (obj.Ctxt) capVal = parseFloat(String(obj.Ctxt).replace(/[^\d.\-]/g, ''));
-      if (!isNaN(capVal)) latestCap_pF = capVal;
 
         updateTemp(Temperatura);
       }
@@ -242,11 +254,13 @@ const chartConfig = (def) => ({
       dataBufferPatron.length = 0;
 
       // Eliminar puntos viejos de los datasets de datos
-      while (calibrarDataset.data.length > maxPoints) {
-        calibrarDataset.data.shift();
-      }
-      while (patronDataset.data.length > maxPoints) {
-        patronDataset.data.shift();
+      if (chartMode === 'continuous') {
+        while (calibrarDataset.data.length > maxPoints) {
+          calibrarDataset.data.shift();
+        }
+        while (patronDataset.data.length > maxPoints) {
+          patronDataset.data.shift();
+        }
       }
 
       // Actualizar el dataset del Setpoint (línea plana discontinua)
@@ -257,8 +271,13 @@ const chartConfig = (def) => ({
       ];
 
       // Actualizar los límites del eje X para crear el efecto de scroll
-      chart.options.scales.x.min = time - chartWindow;
-      chart.options.scales.x.max = time;
+      if (chartMode === 'continuous') {
+        chart.options.scales.x.min = time - chartWindow;
+        chart.options.scales.x.max = time;
+      } else { // Modo absoluto
+        chart.options.scales.x.min = 0;
+        chart.options.scales.x.max = time;
+      }
 
       chart.update('none'); // Actualizar el gráfico sin animación
     }
@@ -268,9 +287,9 @@ const chartConfig = (def) => ({
         // Mostrar error porcentual respecto al setPoint y capacitancia al lado
     let errPercent = NaN;
     if (!isNaN(setPoint) && setPoint !== 0 && !isNaN(latestTemperatura)) {
-      errPercent = ((setPoint - latestTemperatura) / setPoint) * 100.0;
+      errPercent = (setPoint - latestTemperatura) ;
     }
-    let errText = isNaN(errPercent) ? '---' : `${errPercent.toFixed(2)} %`;
+    let errText = isNaN(errPercent) ? '---' : `${errPercent.toFixed(2)} °C`;
     // Mostrar etiqueta "C:" junto al valor de capacitancia (usar "Capacitancia:" si prefieres)
     let capText = '';
     if (!isNaN(latestCap_pF)) {
