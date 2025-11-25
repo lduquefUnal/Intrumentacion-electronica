@@ -2,7 +2,7 @@
 #include "driver/gptimer.h"
 #include <math.h>
 
-// --- PINES (ESP32 DEVKIT V1) ---
+// --- PINES ---
 const int dacPin = 25; 
 const int adcPin = 32; 
 
@@ -12,22 +12,27 @@ volatile float freqM = 5.0f;
 volatile float m_index = 0.8f;  
 volatile float A_c = 1.0f;      
 
-// --- CONFIGURACIÓN CRÍTICA DE TIEMPO ---
+// --- CONFIGURACIÓN DE TIEMPO ---
 #define SAMPLE_RATE_HZ 50000    
-#define PLOT_EVERY_N_SAMPLES 5000 
+
+// AJUSTE CRÍTICO PARA 115200 BAUDIOS:
+// 50kHz / 50 = 1000 muestras enviadas por segundo.
+// Esto genera aprox 6000 caracteres por segundo, seguro para el límite de 11520 bytes/s.
+#define PLOT_EVERY_N_SAMPLES 50 
 
 // Variables de sistema
 volatile bool nuevaMuestra = false;
 gptimer_handle_t gptimer = NULL;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 
-// --- VARIABLES PARA JSON (NUEVO) ---
-const int NUM_DATOS_JSON = 10; // Cantidad de puntos por paquete JSON
-char linea[2048];              // Buffer aumentado para seguridad
+// --- VARIABLES PARA JSON ---
+// Agrupamos 20 muestras por paquete JSON
+const int NUM_DATOS_JSON = 20; 
+char linea[2048];              
 int conteoJson = 0;            
 int idx = 0;                   
 
-// Acumuladores de fase
+// Fases
 float phaseP = 0.0f;
 float phaseM = 0.0f;
 const float DOS_PI = 6.28318530718f;
@@ -37,12 +42,13 @@ bool IRAM_ATTR onTimer(gptimer_handle_t timer, const gptimer_alarm_event_data_t 
 void procesarComando(String cmd);
 
 void setup() {
+    // 1. Mantenemos la velocidad que pediste
     Serial.begin(115200);
     
     analogReadResolution(12);
     dacWrite(dacPin, 0);
 
-    // Configuración del Timer
+    // Configuración del Timer (1MHz resolución)
     gptimer_config_t timer_config = {
         .clk_src = GPTIMER_CLK_SRC_DEFAULT,
         .direction = GPTIMER_COUNT_UP,
@@ -65,11 +71,11 @@ void setup() {
     gptimer_enable(gptimer);
     gptimer_start(gptimer);
     
-    Serial.println("--- GENERADOR AM CON SALIDA JSON ---");
+    Serial.println("--- GENERADOR AM: MODO 115200 (SOLO REAL) ---");
 }
 
 void loop() {
-    // 1. Procesar comandos seriales
+    // 1. Procesar comandos
     if(Serial.available()) {
         String cmd = Serial.readStringUntil('\n');
         cmd.trim();
@@ -82,7 +88,7 @@ void loop() {
         nuevaMuestra = false;
         portEXIT_CRITICAL(&timerMux);
 
-        // Paso de fase dinámico
+        // --- CÁLCULO DE SEÑAL ---
         float stepP = (DOS_PI * freqP) / SAMPLE_RATE_HZ;
         float stepM = (DOS_PI * freqM) / SAMPLE_RATE_HZ;
 
@@ -101,35 +107,36 @@ void loop() {
         if (dacValue < 0) dacValue = 0;
         else if (dacValue > 255) dacValue = 255;
 
+        // Salida física al DAC
         dacWrite(dacPin, dacValue);
 
-        // --- VISUALIZACIÓN Y JSON ---
+        // --- LECTURA Y JSON ---
         static int plotCounter = 0;
         plotCounter++;
         
         if (plotCounter >= PLOT_EVERY_N_SAMPLES) {
             plotCounter = 0;
             
+            // Leemos solo lo REAL
             int adcRaw = analogRead(adcPin);
             float vLeido = (adcRaw / 4095.0f) * 3.3f;
-            float vTeorico = (dacValue / 255.0f) * 3.3f;
 
-            // --- LÓGICA DE EMPAQUETADO JSON ---
+            // --- ARMADO DE JSON ARRAY ---
+            // Formato: [1.20, 1.25, 1.30, ...]
             if (conteoJson == 0) {
                 idx = 0;
-                // Iniciar Array
                 idx += snprintf(linea + idx, sizeof(linea) - idx, "[");
             }
 
-            // Agregar dato
+            // Agregamos el dato con 2 decimales para ahorrar caracteres
             idx += snprintf(linea + idx, sizeof(linea) - idx, 
-                            "{\"teorico\":%.3f,\"real\":%.3f}%s", 
-                            vTeorico, vLeido, 
+                            "%.2f%s", 
+                            vLeido, 
                             (conteoJson + 1 == NUM_DATOS_JSON) ? "" : ",");
 
             conteoJson++;
 
-            // Enviar paquete completo
+            // Enviar cuando el paquete esté lleno
             if (conteoJson >= NUM_DATOS_JSON) {
                 idx += snprintf(linea + idx, sizeof(linea) - idx, "]");
                 Serial.println(linea);
@@ -139,7 +146,7 @@ void loop() {
     }
 }
 
-// ISR
+// ISR Timer
 bool IRAM_ATTR onTimer(gptimer_handle_t timer, const gptimer_alarm_event_data_t *edata, void *user_ctx) {
     portENTER_CRITICAL_ISR(&timerMux);
     nuevaMuestra = true;
