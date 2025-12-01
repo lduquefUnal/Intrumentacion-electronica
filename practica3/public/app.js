@@ -13,15 +13,16 @@ document.addEventListener("DOMContentLoaded", function () {
   const statusLed = document.getElementById('statusLed');
   const statusMsg = document.getElementById('statusMsg');
   const commandSelect = document.getElementById('commandSelect');
-  const valueInput = document.getElementById('valueInput');
+  const valueInput = document.getElementById('valueInput');                                                                                                                                       
   const fftDisplay = document.getElementById('fftDisplay');
 
   let isPaused = false;
   let globalTime = 0;
 
   // Ventana de tiempo y muestreo
-  const chartWindow = 5000; // Ventana de 5 segundos (en ms) para ver más detalle
-  // El intervalo de actualización del gráfico. No necesita ser igual al del ESP32.
+  const chartWindow = 4000; // Ventana de 5 segundos (en ms) para chart1
+  const chart2Window = 1000; // Ventana de 10 segundos (en ms) para chart2
+  // Intervalo de actualización del gráfico. No necesita ser igual al del ESP32.
   const chartStep = 1000 / 30;
 
   const chartDefs = [
@@ -53,28 +54,29 @@ document.addEventListener("DOMContentLoaded", function () {
     resumeBtn.disabled = true;
   });
 
-const chartConfig = (def) => ({
-  type: 'line',
-  data: {
-    labels: [], // Las etiquetas de tiempo van aquí
-    datasets: [
-      {
-        label: def.label,
-        borderColor: 'green',
-        data: [],
-        fill: false,
-        tension: 0.1,
-        pointRadius: 0.1,
-        borderWidth: 1
-      }
-    ]
-  },
+  const chartConfig = (def) => {
+    const config = {
+      type: 'line',
+      data: {
+        datasets: [
+          {
+            label: def.label,
+            borderColor: def.color || 'green',
+            data: [],
+            fill: false,
+            tension: 0.1,
+            pointRadius: 0.1,
+            borderWidth: 1
+          }
+        ]
+      },
     options: {
       animation: false,
       responsive: true,
       scales: {
         x: {
           type: 'linear',
+          // Los valores min/max se establecerán dinámicamente
           min: 0,
           max: chartWindow,
           title: { display: true, text: 'Tiempo (s)' },
@@ -88,11 +90,21 @@ const chartConfig = (def) => ({
         },
         y: {
           title: { display: true, text: def.yLabel }
+          // El rango del eje Y se ajustará automáticamente por defecto
         }
       },
       plugins: { legend: { display: true } }
     }
-  });
+    };
+
+    // Configuración especial para chart2 para fijar el eje Y
+    if (def.id === 'chart2') {
+      config.options.scales.y.min = 0;
+      config.options.scales.y.max = 3.5;
+    }
+
+    return config;
+  };
 
   // Inicializar el gráfico
   chartDefs.forEach((def) => {
@@ -108,7 +120,7 @@ const chartConfig = (def) => ({
     const voltage = Number(avgVoltage);
 
 
-    const distanceCm = 10 - (10 / 2.1) * voltage;
+    const distanceCm = 10.15  -3.1 * voltage;
 
     // Asegurarse de que la distancia esté en el rango de 0 a 1000 cm para la visualización
     const clampedDistanceCm = Math.max(0, Math.min(10, distanceCm));
@@ -170,55 +182,57 @@ const chartConfig = (def) => ({
   });
 
   function updateCharts() {
-    if (isPaused) {
-      setTimeout(updateCharts, chartStep);
-      return;
-    }
-
     const start = performance.now();
-    let time = globalTime;
-    const chart1 = charts['chart1'];
-    const chart2 = charts['chart2'];
 
-    if (chart1) {
-      // Asignar los datasets correctamente según tu chartConfig
-      const dataDataset = chart1.data.datasets[0]; // Dataset de la onda
-      
-      // Procesar la cola de promedios
+    if (!isPaused) {
+      let time = globalTime;
+      const chart1 = charts['chart1'];
+      const chart2 = charts['chart2'];
+
+      // Bucle unificado para procesar datos de ambas colas
       while (dataQueue.length > 0) {
+        // --- Actualización de Chart 1 (Promedios) ---
         const avgValue = dataQueue.shift();
-        updateDisplay(avgValue); // Actualizar el tanque con cada nuevo promedio
-        dataDataset.data.push({ x: time, y: avgValue });
-        time += chartStep; // Avanzamos el tiempo global con los datos de la primera gráfica
-      }
-      
-      // Eliminar puntos viejos para mantener la ventana de visualización
-      while (dataDataset.data.length > 0 && dataDataset.data[0].x < time - chartWindow) {
-        dataDataset.data.shift();
+        if (chart1) {
+          updateDisplay(avgValue); // Actualizar el tanque y los valores numéricos
+          chart1.data.datasets[0].data.push({ x: time, y: avgValue });
+        }
+        time += chartStep; // El tiempo principal avanza con los datos de la primera gráfica
       }
 
-      // Actualizar los límites del eje X para crear el efecto de scroll
-      chart1.options.scales.x.min = time - chartWindow;
-      chart1.options.scales.x.max = time;
+      // --- Actualización de Chart 2 (Onda completa) ---
+      if (chart2 && ondaDataQueue.length > 0) {
+        const ondaDataset = chart2.data.datasets[0];
+        // No limpiamos los datos, los acumulamos.
+        // El tiempo de la onda debe continuar desde el último punto de la gráfica 1.
+        let ondaTime = time;
+        // Calculamos un paso de tiempo muy pequeño para los puntos de la onda
+        // para que se vean como una señal continua y densa.
+        const step = chartStep / Math.max(1, ondaDataQueue.length);
 
-      chart1.update('none'); // Actualizar el gráfico sin animación
+        while (ondaDataQueue.length > 0) {
+          const value = ondaDataQueue.shift();
+          ondaDataset.data.push({ x: ondaTime, y: value });
+          ondaTime += step;
+        }
+      }
+
+      globalTime = time; // Guardamos el tiempo para la próxima actualización
+
+      // --- Actualización de los lienzos de los gráficos ---
+      Object.values(charts).forEach(chart => {
+        const window = chart.canvas.id === 'chart2' ? chart2Window : chartWindow;
+        const dataset = chart.data.datasets[0].data;
+        // Eliminar puntos viejos que ya no son visibles
+        while (dataset.length > 0 && dataset[0].x < time - window) {
+          dataset.shift();
+        }
+        // Actualizar la ventana de visualización del eje X
+        chart.options.scales.x.min = time - window;
+        chart.options.scales.x.max = time;
+        chart.update('none');
+      });
     }
-
-    if (chart2) {
-      const ondaDataset = chart2.data.datasets[0];
-      ondaDataset.data = []; // Limpiamos los datos anteriores para redibujar el nuevo paquete
-      let ondaTime = time - chartWindow; // Empezamos a dibujar desde el inicio de la ventana actual
-      const step = chartWindow / Math.max(1, ondaDataQueue.length);
-
-      while(ondaDataQueue.length > 0) {
-        const value = ondaDataQueue.shift();
-        ondaDataset.data.push({ x: ondaTime, y: value });
-        ondaTime += step;
-      }
-      chart2.update('none');
-    }
-
-    globalTime = time;
 
     const elapsed = performance.now() - start;
     setTimeout(updateCharts, Math.max(0, chartStep - elapsed));
