@@ -121,8 +121,74 @@ void loop() {
     if (Serial.available()) {
         String cmd = Serial.readStringUntil('\n');
         cmd.trim();
+<<<<<<< HEAD
         if (cmd.length() > 0) {
             procesarComando(cmd);
+=======
+        procesarComando(cmd);
+    }
+
+    // 2. Generación de señal
+    if(nuevaMuestra) {
+        portENTER_CRITICAL(&timerMux);
+        nuevaMuestra = false;
+        portEXIT_CRITICAL(&timerMux);
+
+        // Paso de fase dinámico
+        float stepP = (DOS_PI * freqP) / SAMPLE_RATE_HZ;
+        float stepM = (DOS_PI * freqM) / SAMPLE_RATE_HZ;
+
+        phaseP += stepP;
+        phaseM += stepM;
+
+        if(phaseP > DOS_PI) phaseP -= DOS_PI;
+        if(phaseM > DOS_PI) phaseM -= DOS_PI;
+
+        float mod = sinf(phaseM);
+        float car = sinf(phaseP);
+        
+        // Fórmula AM corregida para usar A_c y evitar la división que limitaba la amplitud.
+        float am_signal = A_c * (1.0f + m_index * mod) * car;
+        int dacValue = (int)((am_signal / (A_c * (1.0f + m_index)) + 1.0f) * 127.5f);
+
+        if (dacValue < 0) dacValue = 0;
+        else if (dacValue > 255) dacValue = 255;
+
+        dacWrite(dacPin, dacValue);
+
+        // --- VISUALIZACIÓN Y JSON ---
+        static int plotCounter = 0;
+        plotCounter++;
+        
+        if (plotCounter >= PLOT_EVERY_N_SAMPLES) {
+            plotCounter = 0;
+            
+            int adcRaw = analogRead(adcPin);
+            float vLeido = (adcRaw / 4095.0f) * 3.3f;
+            float vTeorico = (dacValue / 255.0f) * 3.3f;
+
+            // --- LÓGICA DE EMPAQUETADO JSON ---
+            if (conteoJson == 0) {
+                idx = 0;
+                // Iniciar Array
+                idx += snprintf(linea + idx, sizeof(linea) - idx, "[");
+            }
+
+            // Agregar dato
+            idx += snprintf(linea + idx, sizeof(linea) - idx, 
+                            "{\"teorico\":%.3f,\"real\":%.3f}%s", 
+                            vTeorico, vLeido, 
+                            (conteoJson + 1 == NUM_DATOS_JSON) ? "" : ",");
+
+            conteoJson++;
+
+            // Enviar paquete completo
+            if (conteoJson >= NUM_DATOS_JSON) {
+                idx += snprintf(linea + idx, sizeof(linea) - idx, "]");
+                Serial.println(linea);
+                conteoJson = 0; 
+            }
+>>>>>>> b616ec1 (frontend)
         }
     }
 }
@@ -141,6 +207,7 @@ void procesarComando(const String &cmd) {
         String param = cmd.substring(0, separator);
         float value = cmd.substring(separator + 1).toFloat();
         
+<<<<<<< HEAD
         portENTER_CRITICAL(&timerMux);
         if (param.equalsIgnoreCase("FP")) freqP = value;
         else if (param.equalsIgnoreCase("FM")) freqM = value;
@@ -332,5 +399,11 @@ void taskFFT(void *param) {
         // -------------------------------------------------
 
         xTaskNotifyGive(samplingTaskHandle);
+=======
+        if(param.equalsIgnoreCase("FP")) freqP = value;
+        else if(param.equalsIgnoreCase("FM")) freqM = value;
+        else if(param.equalsIgnoreCase("IDX")) m_index = value;
+        else if(param.equalsIgnoreCase("AC")) A_c = value;
+>>>>>>> b616ec1 (frontend)
     }
 }

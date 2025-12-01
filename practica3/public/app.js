@@ -5,41 +5,43 @@ document.addEventListener("DOMContentLoaded", function () {
   const pauseBtn = document.getElementById('pauseBtn');
   const resumeBtn = document.getElementById('resumeBtn');
   const statusDiv = document.getElementById('statusDiv');
-  const errorDisplay = document.getElementById('errorDisplay');
-  const thermometerLevel = document.getElementById('water-level-tank');
-  const currentTemperaturaEl = document.getElementById('current-level');
+  const tankLevel = document.getElementById('water-level-tank'); // Renombrado para claridad
+  const currentValueEl = document.getElementById('current-level'); // Renombrado
+  const currentVoltageEl = document.getElementById('current-voltage'); // Nuevo para el voltaje
   const portSelector = document.getElementById('portSelector');
   const connectBtn = document.getElementById('connectBtn');
   const statusLed = document.getElementById('statusLed');
   const statusMsg = document.getElementById('statusMsg');
   const commandSelect = document.getElementById('commandSelect');
   const valueInput = document.getElementById('valueInput');
-  const toggleModeBtn = document.getElementById('toggleModeBtn');
+  const fftDisplay = document.getElementById('fftDisplay');
+
   let isPaused = false;
-  let setPoint = 0.0;
-  let error = 0.0;
   let globalTime = 0;
-  let latestTemperatura = NaN;
-  let chartMode = 'continuous'; // 'continuous' o 'absolute'
 
   // Ventana de tiempo y muestreo
-  const sampleInterval = 15; // Intervalo de muestreo REAL del ESP32 en ms
-  const chartWindow = 30000; // Ventana de 30 segundos (en ms)
+  const chartWindow = 5000; // Ventana de 5 segundos (en ms) para ver más detalle
+  // El intervalo de actualización del gráfico. No necesita ser igual al del ESP32.
   const chartStep = 1000 / 30;
-  const maxPoints = Math.ceil(chartWindow / sampleInterval);
 
   const chartDefs = [
     {
-      id: 'chart1',
-      label: 'Temperatura °C',
+      id: 'chart1', // El ID del canvas en tu HTML
+      label: 'mv onda AM (distancia)',
       color: 'red',
-      yRange: { min: 25, max: 60 }
+      yLabel: 'Amplitud (V)'
+    },
+    {
+      id: 'chart2',
+      label: 'Onda Serial',
+      color: 'blue',
+      yLabel: 'Valor'
     }
   ];
 
   const charts = {};
-  const dataBuffer = [];
-  
+  const dataQueue = []; // Cola para almacenar los promedios recibidos
+  const ondaDataQueue = []; // Cola para los datos de la nueva gráfica 'onda'
   pauseBtn.addEventListener('click', () => {
     isPaused = true;
     pauseBtn.disabled = true;
@@ -51,39 +53,13 @@ document.addEventListener("DOMContentLoaded", function () {
     resumeBtn.disabled = true;
   });
 
-  toggleModeBtn.addEventListener('click', () => {
-    if (chartMode === 'continuous') {
-      chartMode = 'absolute';
-      toggleModeBtn.textContent = 'Modo: Absoluto';
-    } else {
-      chartMode = 'continuous';
-      toggleModeBtn.textContent = 'Modo: Continuo';
-    }
-    // Forzar una actualización de la vista del gráfico al cambiar de modo
-    const chart = charts['chart1'];
-    if (chart) chart.update('none');
-  });
-
-
 const chartConfig = (def) => ({
   type: 'line',
   data: {
     labels: [], // Las etiquetas de tiempo van aquí
     datasets: [
-      // Dataset 1: Setpoint
       {
-        label: 'Setpoint (°C)',
-        borderColor: 'red',
-        borderDash: [5, 5], // Línea punteada
-        data: [],
-        fill: false,
-        tension: 0.1,
-        pointRadius: 0.1,
-        borderWidth: 1
-      },
-      // Dataset 2: T. a Calibrar
-      {
-        label: 'T. a Calibrar (°C)',
+        label: def.label,
         borderColor: 'green',
         data: [],
         fill: false,
@@ -111,84 +87,68 @@ const chartConfig = (def) => ({
           }
         },
         y: {
-          min: def.yRange.min,
-          max: def.yRange.max,
-          title: { display: true, text: def.label }
+          title: { display: true, text: def.yLabel }
         }
       },
       plugins: { legend: { display: true } }
     }
   });
 
+  // Inicializar el gráfico
   chartDefs.forEach((def) => {
     const canvas = document.getElementById(def.id);
     if (canvas) {
       const ctx = canvas.getContext('2d');
       charts[def.id] = new Chart(ctx, chartConfig(def));
     }
+  }); 
+
+  // Función para actualizar el tanque y el valor numérico
+  function updateDisplay(avgVoltage) {
+    const voltage = Number(avgVoltage);
+
+
+    const distanceCm = 10 - (10 / 2.1) * voltage;
+
+    // Asegurarse de que la distancia esté en el rango de 0 a 1000 cm para la visualización
+    const clampedDistanceCm = Math.max(0, Math.min(10, distanceCm));
+
+    if (tankLevel) {
+      // El porcentaje de llenado del tanque se basa en la distancia en cm (0cm = 0%, 1000cm = 100%)
+      const percentage = (clampedDistanceCm / 10) * 100;
+      tankLevel.style.height = `${percentage}%`;
+      // Cambiamos el color a azul para que parezca agua
+      tankLevel.style.backgroundColor = 'blue';
+    }
+    if (currentValueEl) {
+      // Mostrar la distancia calculada en centímetros
+      currentValueEl.textContent = isNaN(distanceCm) ? '---' : clampedDistanceCm.toFixed(1);
+    }
+    if (currentVoltageEl) {
+      // Mostrar el voltaje promedio recibido
+      currentVoltageEl.textContent = isNaN(voltage) ? '---' : voltage.toFixed(3);
+    }
+  }
+
+  // Escuchar el promedio de los datos de la onda AM
+  socket.on('avgData', (avgValue) => {
+    if (!isPaused) {
+      dataQueue.push(avgValue);
+    }
   });
 
-  function updateTemp(Temperatura) {
-     if (thermometerLevel) {
-    // tomar el máximo de la escala Y del chart si está disponible, si no usar 12
-    const chart = charts['chart1'];
-    const chartYMax = chart && chart.options && chart.options.scales && chart.options.scales.y && typeof chart.options.scales.y.max === 'number'
-      ? chart.options.scales.y.max // Será 60
-      : 60;
-    const chartYMin = chart && chart.options && chart.options.scales && chart.options.scales.y && typeof chart.options.scales.y.min === 'number'
-      ? chart.options.scales.y.min // Será 25
-      : 25;
-
-    const val = Number(Temperatura);
-    const range = chartYMax - chartYMin;
-    const correctedValue = val - chartYMin;
-    
-    const percentage = (isNaN(val) || range <= 0) ? 0 : (correctedValue / range) * 100;
-
-    thermometerLevel.style.height = `${Math.min(100, Math.max(0, percentage))}%`;
-    thermometerLevel.style.backgroundColor = 'red';
-  }
-  if (currentTemperaturaEl) {
-    const v = Number(Temperatura);
-    currentTemperaturaEl.textContent = isNaN(v) ? '---' : v.toFixed(2);
-  }
-  }
-
-  // Nuevo: manejar ambos formatos: array de objetos (JSON) o string legacy
-  socket.on('serialData', (payload) => {
-    // Si el servidor ya envía un array de objetos
-    if (Array.isArray(payload)) {
-      for (const obj of payload) {
-        const Temperatura = parseFloat(obj.TempTermist);
-        const currentSetPoint = parseFloat(obj.SP);
-        const errVal = parseFloat(obj.err);
-
-        if (!isNaN(Temperatura)) {
-          dataBuffer.push(Temperatura);
-          latestTemperatura = Temperatura;
-        }
-        if (!isNaN(currentSetPoint)) setPoint = currentSetPoint;
-        if (!isNaN(errVal)) error = errVal;
-
-        updateTemp(Temperatura);
-      }
-      return;
+  // Escuchar los datos de la nueva onda
+  socket.on('ondaData', (data) => {
+    if (!isPaused && Array.isArray(data)) {
+      ondaDataQueue.push(...data); // Añadimos todos los puntos recibidos a la cola
     }
+  });
 
-    // Si llega legacy como string "v,sp;v2,sp2;..."
-    if (typeof payload === 'string') {
-      const dataPoints = payload.trim().split(';');
-      for (const point of dataPoints) {
-        if (!point) continue;
-        const values = point.split(',');
-        if (values.length >= 2) {
-          const Temperatura = parseFloat(values[0]);
-          const currentSetPoint = parseFloat(values[1]);
-          if (!isNaN(Temperatura)) dataBuffer.push(Temperatura);
-          if (!isNaN(currentSetPoint)) setPoint = currentSetPoint;
-          updateTemp(Temperatura);
-        }
-      }
+  // Escuchar los datos de FFT y mostrarlos como texto
+  socket.on('fftData', (data) => {
+    if (!isPaused && fftDisplay && Array.isArray(data)) {
+      const fftStrings = data.map(item => `F: ${item.f.toFixed(1)} Hz, M: ${item.m.toFixed(1)}`);
+      fftDisplay.textContent = 'FFT: ' + fftStrings.join(' | ');
     }
   });
 
@@ -217,64 +177,53 @@ const chartConfig = (def) => ({
 
     const start = performance.now();
     let time = globalTime;
-    const chart = charts['chart1'];
+    const chart1 = charts['chart1'];
+    const chart2 = charts['chart2'];
 
-  if (chart) {
+    if (chart1) {
       // Asignar los datasets correctamente según tu chartConfig
-      const setpointDataset = chart.data.datasets[0]; // Setpoint (rojo, dashed)
-      const calibrarDataset = chart.data.datasets[1]; // T. a Calibrar (verde)
-
-      // Procesar el buffer de datos de temperatura
-      dataBuffer.forEach(tempTermistVal => {
-        calibrarDataset.data.push({ x: time, y: tempTermistVal });
-        time += sampleInterval;
-      });
-
-      // Limpiar los buffers de datos ya procesados
-      dataBuffer.length = 0;
-
-      // Eliminar puntos viejos de los datasets de datos
-      if (chartMode === 'continuous') {
-        while (calibrarDataset.data.length > maxPoints) {
-          calibrarDataset.data.shift();
-        }
+      const dataDataset = chart1.data.datasets[0]; // Dataset de la onda
+      
+      // Procesar la cola de promedios
+      while (dataQueue.length > 0) {
+        const avgValue = dataQueue.shift();
+        updateDisplay(avgValue); // Actualizar el tanque con cada nuevo promedio
+        dataDataset.data.push({ x: time, y: avgValue });
+        time += chartStep; // Avanzamos el tiempo global con los datos de la primera gráfica
       }
-
-      // Actualizar el dataset del Setpoint (línea plana discontinua)
-      // Usa la variable global 'setPoint'
-      setpointDataset.data = [
-        { x: time - chartWindow, y: setPoint },
-        { x: time, y: setPoint }
-      ];
+      
+      // Eliminar puntos viejos para mantener la ventana de visualización
+      while (dataDataset.data.length > 0 && dataDataset.data[0].x < time - chartWindow) {
+        dataDataset.data.shift();
+      }
 
       // Actualizar los límites del eje X para crear el efecto de scroll
-      // 'time' está en milisegundos
-      if (chartMode === 'continuous') {
-        chart.options.scales.x.min = time - chartWindow;
-        chart.options.scales.x.max = time;
-      } else { // Modo absoluto
-        chart.options.scales.x.min = 0;
-        chart.options.scales.x.max = time;
-      }
+      chart1.options.scales.x.min = time - chartWindow;
+      chart1.options.scales.x.max = time;
 
-      chart.update('none'); // Actualizar el gráfico sin animación
+      chart1.update('none'); // Actualizar el gráfico sin animación
+    }
+
+    if (chart2) {
+      const ondaDataset = chart2.data.datasets[0];
+      ondaDataset.data = []; // Limpiamos los datos anteriores para redibujar el nuevo paquete
+      let ondaTime = time - chartWindow; // Empezamos a dibujar desde el inicio de la ventana actual
+      const step = chartWindow / Math.max(1, ondaDataQueue.length);
+
+      while(ondaDataQueue.length > 0) {
+        const value = ondaDataQueue.shift();
+        ondaDataset.data.push({ x: ondaTime, y: value });
+        ondaTime += step;
+      }
+      chart2.update('none');
     }
 
     globalTime = time;
-        errorDisplay.textContent = isNaN(error) ? '---' : error.toFixed(2);
-        // Mostrar error porcentual respecto al setPoint y capacitancia al lado
-    let errPercent = NaN;
-    if (!isNaN(setPoint) && setPoint !== 0 && !isNaN(latestTemperatura)) {
-      errPercent = (setPoint - latestTemperatura) ;
-    }
-    let errText = isNaN(errPercent) ? '---' : `${errPercent.toFixed(2)} °C`;
-    // Mostrar etiqueta "C:" junto al valor de capacitancia (usar "Capacitancia:" si prefieres)
-
-    errorDisplay.textContent = `${errText}`;
 
     const elapsed = performance.now() - start;
     setTimeout(updateCharts, Math.max(0, chartStep - elapsed));
   }
+
 
   // Envío de comandos (usa commandSelect y valueInput definidos arriba)
   function sendCommand() {
@@ -305,7 +254,8 @@ const chartConfig = (def) => ({
       return;
     }
 
-    const cmd = `${cmdCode}=${rawVal}`;
+    const value = parseFloat(rawVal);
+    const cmd = `${cmdCode}=${value}`;
     socket.emit('sendCommand', cmd);
     statusDiv.textContent = `Enviando: ${cmd}`;
     statusDiv.style.color = 'blue';

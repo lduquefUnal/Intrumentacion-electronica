@@ -139,13 +139,13 @@ void setup() {
   while (!Serial);
 
   // --- Configurar ADC con driver-ng ---
-  adc1_config_width(ADC_WIDTH_BIT_12);
-  adc1_config_channel_atten(ADC_CHANNEL,  ADC_ATTEN_DB_11);
-  esp_adc_cal_characterize(ADC_UNIT_1,
-                           ADC_ATTEN_DB_11,
-                           ADC_WIDTH_BIT_12,
-                           DEFAULT_VREF,
-                           &adc_chars);
+    adc1_config_width(ADC_WIDTH_BIT_12);
+    adc1_config_channel_atten(ADC_CHANNEL,  ADC_ATTEN_DB_11);
+    esp_adc_cal_characterize(ADC_UNIT_1,
+                            ADC_ATTEN_DB_11,
+                            ADC_WIDTH_BIT_12,
+                            DEFAULT_VREF,
+                            &adc_chars);
 
   // --- PWM y timer ---
   inicializarPWM();
@@ -254,7 +254,7 @@ void procesarComando(const String &cmd) {
   if (idx < 0) { Serial.println("ERROR"); return; }
   String p = cmd.substring(0,idx), v = cmd.substring(idx+1);
   float  val = v.toFloat();
-  
+
   portENTER_CRITICAL(&timerMux);
     if      (p.equalsIgnoreCase("FP")) freqPWM   = val, actualizarPWM();
     else if (p.equalsIgnoreCase("DC")) dutyCycle = val, actualizarPWM();

@@ -49,43 +49,43 @@ io.on('connection', (socket) => {
       socket.emit('statusUpdate', `Conectado al puerto serial: ${portName}`);
       
 
- parser.on('data', (line) => {
-        const rawLine = (typeof line === 'string') ? line.trim() : line.toString().trim();
-        if (!rawLine) return;
-
-        // Quitar prefijo tipo "16:21:54.220 -> " si aparece (monitor Arduino)
-        const cleaned = rawLine.replace(/^\s*\d{1,2}:\d{2}:\d{2}\.\d+\s*->\s*/, '');
-
-        // Acumular fragmentos y buscar JSON completo (array u objeto)
-        serialBuffer += cleaned;
-
-        // Extraer y parsear mientras haya JSON completo en el buffer
+      parser.on('data', (line) => {
+        serialBuffer += line.toString().trim();
+        
         while (true) {
-          const idxArrStart = serialBuffer.indexOf('[');
-          const idxObjStart = serialBuffer.indexOf('{');
-          let startIdx = -1;
-          let endIdx = -1;
-
-          if (idxArrStart !== -1 && (idxObjStart === -1 || idxArrStart < idxObjStart)) {
-            startIdx = idxArrStart;
-            endIdx = serialBuffer.indexOf(']', startIdx);
-          } else if (idxObjStart !== -1) {
-            startIdx = idxObjStart;
-            endIdx = serialBuffer.indexOf('}', startIdx);
+          const startBracket = serialBuffer.indexOf('{');
+          const startArray = serialBuffer.indexOf('[');
+          
+          let startIdx;
+          if (startBracket === -1 && startArray === -1) break;
+          
+          if (startBracket !== -1 && (startArray === -1 || startBracket < startArray)) {
+            startIdx = startBracket;
+          } else {
+            startIdx = startArray;
           }
 
-          if (startIdx === -1 || endIdx === -1) break; // no hay JSON completo aún
+          if (startIdx > 0) {
+            serialBuffer = serialBuffer.substring(startIdx);
+          }
 
-          const candidate = serialBuffer.substring(startIdx, endIdx + 1);
           try {
-            const parsed = JSON.parse(candidate);
-            const out = Array.isArray(parsed) ? parsed : [parsed];
-            io.emit('serialData', out);
-            io.emit('serialLine', candidate);
-            // eliminar la parte procesada del buffer
-            serialBuffer = serialBuffer.slice(endIdx + 1);
+            const parsed = JSON.parse(serialBuffer);
+            
+            if (parsed.real) {
+              const sum = parsed.real.reduce((acc, val) => acc + val, 0);
+              const avg = parsed.real.length > 0 ? sum / parsed.real.length : 0;
+              io.emit('avgData', avg);
+            } else if (parsed.fft) {
+              io.emit('fftData', parsed.fft);
+            } else if (parsed.onda && Array.isArray(parsed.onda)) {
+              io.emit('ondaData', parsed.onda);
+            }
+            
+            io.emit('serialLine', serialBuffer);
+            serialBuffer = ''; // Limpiar buffer después de un parseo exitoso
           } catch (e) {
-            // JSON aún incompleto o malformado; esperar más datos
+            // Si JSON.parse falla, el JSON está incompleto. Salimos del bucle y esperamos más datos.
             break;
           }
         }

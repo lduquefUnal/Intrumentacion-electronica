@@ -10,8 +10,8 @@
   <header class="banner">
     <img src="Logo.png" alt="Logo" class="logo">
     <div class="branding">
-      <h1>SISTEMA PID</h1>
-      <h2>Monitor de Temperatura</h2>
+      <h1>SISTEMA </h1>
+      <h2>Monitor Onda AM  y distancian</h2>
       <h3>2025-01</h3>
     </div>
     
@@ -31,20 +31,10 @@
       <h3>Enviar Comando</h3>
         <div class="input-group" id="commandControls">
         <select id="commandSelect" title="Selecciona un comando (hover para ver descripción)">
-          <option value="FP" title="Frecuencia PWM (Hz)">FP</option>
-          <option value="DC" title="Ciclo de trabajo (%) de la bomba">DC</option>
-          <option value="KP" title="Ganancia proporcional (PID)">KP</option>
-          <option value="KI" title="Ganancia integral (PID)">KI</option>
-          <option value="KD" title="Ganancia derivativa (PID)">KD</option>
-          <option value="SP" title="SetPoint altura (cm)">SP</option>
-          <option value="ADCOFF" title="Offset ADC en mV (ej. -30)">ADCOFF</option>
-          <option value="ADCSCL" title="Escala ADC (multiplicador, ej. 0.78)">ADCSCL</option>
-          <option value="VMIN" title="Voltaje mínimo (V) → 0 cm">VMIN</option>
-          <option value="VMAX" title="Voltaje máximo (V) → altura máxima">VMAX</option>
-          <option value="HMIN" title="Altura mínima (cm)">HMIN</option>
-          <option value="HMAX" title="Altura máxima (cm)">HMAX</option>
-          <option value="CF" title="Factor de capacitancia (simulado)">CF</option>
-          <option value="CUSTOM" title="Comando libre: escribe en la casilla 'comando'">CUSTOM</option>
+              <option value="FP">Frec. Portadora (Hz)</option>
+              <option value="FM">Frec. Moduladora (Hz)</option>
+              <option value="IDX">Índice Modulación (0-1)</option>
+              <option value="AC">Amplitud Portadora</option> 
         </select>
 
         <input type="number" id="valueInput" placeholder="valor" step="any" style="width:110px;" />
@@ -62,21 +52,26 @@
   <main class="dashboard">
     <div class="chart-container">
       <canvas id="chart1"></canvas>
+      <div id="fftDisplay" class="fft-info"></div>
+    </div>
+
+    <div class="chart-container">
+      <canvas id="chart2"></canvas>
     </div>
 
     <div class="tank-visualizer">
       <div class="tank-header">
-        <p>Temperatura</p>
-        <p><span id="current-level">---</span> °C</p>
+        <p>Distancia</p>
+        <p><span id="current-level">---</span> cm (<span id="current-voltage">---</span> V)</p>
       </div>
       <div class="tank-body">
         <div class="tank-scale">
-          <div class="scale-mark" style="bottom: 100%;">60 °C</div>
-          <div class="scale-mark" style="bottom: 80%;">53 °C</div>
-          <div class="scale-mark" style="bottom: 60%;">46 °C</div>
-          <div class="scale-mark" style="bottom: 40%;">39 °C</div>
-          <div class="scale-mark" style="bottom: 20%;">32 °C</div>
-          <div class="scale-mark" style="bottom: 0%;">25 °C</div>
+          <div class="scale-mark" style="bottom: 100%;">10 cm</div>
+          <div class="scale-mark" style="bottom: 80%;">8 cm </div>
+          <div class="scale-mark" style="bottom: 60%;">6 cm</div>
+          <div class="scale-mark" style="bottom: 40%;">4 cm</div>
+          <div class="scale-mark" style="bottom: 20%;">2 cm </div>
+          <div class="scale-mark" style="bottom: 0%;">0 cm</div>
         </div>
         <div id="water-level-tank" class="water-level"></div>
       </div>
