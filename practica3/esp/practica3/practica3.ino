@@ -148,6 +148,7 @@ void procesarComando(const String &cmd) {
             m_index = value;
             if (m_index < 0.0f) m_index = 0.0f;
         }
+        else if(param.equalsIgnoreCase("AC")) A_c = value;
         portEXIT_CRITICAL(&timerMux);
     }
 }
