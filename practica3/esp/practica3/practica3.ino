@@ -1,28 +1,31 @@
 /*
- * Práctica 3 - Generador AM con procesamiento FFT (CORREGIDO - ERROR VOLATILE)
- *
- * Se ha corregido la asignación de la estructura volatile copiando
- * los miembros individualmente.
+ * Práctica 3 - Generador AM con procesamiento FFT
+ * TRES SALIDAS POR SERIAL:
+ * 1. {"am": [...]}     - Onda AM calculada (valores DAC convertidos a voltaje)
+ * 2. {"adc": [...]}    - Lecturas directas del ADC (señal física)
+ * 3. {"fft": [...]}    - Resultados del análisis espectral
+ * 
+ * IMPORTANTE: Cable físico PIN 25 → PIN 32 para FFT válida
  */
 
+#include <Arduino.h> 
 #include "driver/adc.h"
 #include "driver/gptimer.h"
-#include <math.h>
-#include <Arduino.h>
 #include "driver/dac.h"
 #include "arduinoFFT.h"
+#include <math.h>
 
 // Selección del canal DAC (GPIO 25 es DAC_CHANNEL_1)
 #define DAC_CHANNEL DAC_CHANNEL_1 
 
 // --- PINES (ESP32 DEVKIT V1) ---
 const int dacPin = 25;             // Salida DAC
-const int adcPin = 32;             // Entrada ADC (Retroalimentación)
+const int adcPin = 32;             // Entrada ADC (Retroalimentación para FFT)
 
 // --- PARÁMETROS DE LA SEÑAL AM ---
 volatile float freqP  = 1000.0f;    // Portadora (Hz)
 volatile float freqM  = 100.0f;     // Moduladora (Hz)
-volatile float m_index = 0.8f;    // Índice
+volatile float m_index = 0.8f;      // Índice
 volatile float A_c    = 1.0f;
 
 #define NUM_TOP_FREQS 3 
@@ -41,15 +44,15 @@ volatile FftPeak last_top_peaks[NUM_TOP_FREQS];
 
 // --- CONFIGURACIÓN FFT ---
 #define FFT_SAMPLES 512
-const int NUM_DATOS_JSON = 20;
+const int NUM_DATOS_JSON = 20;  // Muestras por paquete JSON
 
 // Buffers de tiempo (Doble Buffer)
 static double vRealBuf[2][FFT_SAMPLES];
 static double vImagBuf[2][FFT_SAMPLES];
 
 // Control de buffers
-volatile int currentBuffer = 0;       
-volatile int bufferIndex   = 0;       
+volatile int currentBuffer = 0;        
+volatile int bufferIndex   = 0;        
 volatile bool bufferReady[2] = {false, false}; 
 
 // Handles de Tareas y Colas
@@ -76,6 +79,8 @@ void setup() {
     Serial.begin(115200);
     while (!Serial) { delay(10); }
 
+    // Configuración explícita del pin de entrada para asegurar lectura
+    pinMode(adcPin, INPUT);
     analogReadResolution(12);
 
     // Inicialización del DAC
@@ -112,9 +117,9 @@ void setup() {
     // Core 0: Muestreo (Prioridad Alta)
     xTaskCreatePinnedToCore(taskSampling, "samplingTask", 8192, NULL, 2, &samplingTaskHandle, 0);
     // Core 1: FFT (Prioridad Menor)
-    xTaskCreatePinnedToCore(taskFFT,      "fftTask",      10240, NULL, 1, &fftTaskHandle,       1);
+    xTaskCreatePinnedToCore(taskFFT,      "fftTask",      10240, NULL, 1, &fftTaskHandle,        1);
 
-    Serial.println("--- Generador AM Optimizado + FFT ---");
+    Serial.println("--- Generador AM: 3 Salidas (AM/ADC/FFT) ---");
 }
 
 void loop() {
@@ -155,10 +160,11 @@ void procesarComando(const String &cmd) {
 
 // --- TAREA DE MUESTREO Y GENERACIÓN ---
 void taskSampling(void *param) {
-    static char linea[256];      
+    static char linea[512];      
     static int conteoJson = 0;   
     static int idx = 0;          
-    static float vLeidos[NUM_DATOS_JSON]; 
+    static float vAM[NUM_DATOS_JSON];    // Valores AM calculados
+    static float vADC[NUM_DATOS_JSON];   // Valores ADC leídos
     
     while (true) {
         uint8_t dummy; 
@@ -190,8 +196,10 @@ void taskSampling(void *param) {
 
         dac_output_voltage(DAC_CHANNEL, (uint8_t)dacValue);  
         
-        // 2. BUFFER FFT
+        // 2. LECTURA ADC (señal física)
         int adcRaw = analogRead(adcPin); 
+        
+        // 3. BUFFER FFT
         bool notify_fft = false; 
         
         portENTER_CRITICAL(&timerMux); 
@@ -211,53 +219,71 @@ void taskSampling(void *param) {
             xTaskNotifyGive(fftTaskHandle); 
         } 
         
-        // 3. DATOS DE TIEMPO (Serial)
+        // 4. RECOLECCIÓN DE DATOS PARA SERIAL (decimado)
         static int decimator = 0;
         decimator++;
         
-        if (decimator >= 10) { 
+        if (decimator >= 10) { // Decimación para no saturar el serial
             decimator = 0;
-            float vLeido = (adcRaw / 4095.0f) * 3.3f; 
+            
             if (conteoJson < NUM_DATOS_JSON) {
-                vLeidos[conteoJson] = vLeido; 
+                // Convertir valor DAC a voltaje (0-255 → 0-3.3V)
+                vAM[conteoJson] = (dacValue / 255.0f) * 3.3f;
+                // Convertir valor ADC a voltaje (0-4095 → 0-3.3V)
+                vADC[conteoJson] = (adcRaw / 4095.0f) * 3.3f;
                 conteoJson++;
             }
         }
 
+        // 5. ENVÍO DE DATOS AM Y ADC POR SERIAL
         if (conteoJson >= NUM_DATOS_JSON) { 
+            // JSON 1: Onda AM calculada
+            idx = 0;
+            idx += snprintf(linea + idx, sizeof(linea) - idx, "{\"onda\":[");
+            for (int i = 0; i < NUM_DATOS_JSON; i++) {
+                idx += snprintf(linea + idx, sizeof(linea) - idx, 
+                                "%.2f%s", vAM[i], (i == NUM_DATOS_JSON - 1) ? "" : ","); 
+            }
+            idx += snprintf(linea + idx, sizeof(linea) - idx, "]}");
+            Serial.println(linea); 
+            
+            // JSON 2: Lectura ADC real
             idx = 0;
             idx += snprintf(linea + idx, sizeof(linea) - idx, "{\"real\":[");
             for (int i = 0; i < NUM_DATOS_JSON; i++) {
                 idx += snprintf(linea + idx, sizeof(linea) - idx, 
-                                "%.2f%s", vLeidos[i], (i == NUM_DATOS_JSON - 1) ? "" : ","); 
+                                "%.2f%s", vADC[i], (i == NUM_DATOS_JSON - 1) ? "" : ","); 
             }
-            idx += snprintf(linea + idx, sizeof(linea) - idx, "]}"); 
-            Serial.println(linea); 
+            idx += snprintf(linea + idx, sizeof(linea) - idx, "]}");
+            Serial.println(linea);
+            
             conteoJson = 0;
         }
 
-        // 4. RESULTADOS FFT (Serial)
+        // 6. RESULTADOS FFT (Serial)
         if (ulTaskNotifyTake(pdTRUE, 0) == 1) { 
             FftPeak current_peaks_copy[NUM_TOP_FREQS];
             
-            // --- CORRECCIÓN AQUÍ: Copia manual de miembros ---
             portENTER_CRITICAL(&timerMux); 
                 for (int n = 0; n < NUM_TOP_FREQS; n++) {
                     current_peaks_copy[n].freq = last_top_peaks[n].freq; 
                     current_peaks_copy[n].mag  = last_top_peaks[n].mag;
                 }
             portEXIT_CRITICAL(&timerMux); 
-            // -------------------------------------------------
 
             idx = 0; 
             idx += snprintf(linea + idx, sizeof(linea) - idx, "{\"fft\":["); 
             
+            bool first = true;
             for (int n = 0; n < NUM_TOP_FREQS; n++) {
-                if (current_peaks_copy[n].mag > 0.0f) { 
+                if (current_peaks_copy[n].mag > 1.0f) {
+                     if (!first) {
+                         idx += snprintf(linea + idx, sizeof(linea) - idx, ",");
+                     }
                      idx += snprintf(linea + idx, sizeof(linea) - idx, 
-                                     "{\"f\":%.1f,\"m\":%.1f}%s", 
-                                     current_peaks_copy[n].freq, current_peaks_copy[n].mag,
-                                     (n == NUM_TOP_FREQS - 1 || current_peaks_copy[n+1].mag == 0.0f) ? "" : ","); 
+                                     "{\"f\":%.1f,\"m\":%.1f}", 
+                                     current_peaks_copy[n].freq, current_peaks_copy[n].mag);
+                     first = false;
                 }
             }
             idx += snprintf(linea + idx, sizeof(linea) - idx, "]}"); 
@@ -323,14 +349,12 @@ void taskFFT(void *param) {
             }
         }
         
-        // --- CORRECCIÓN AQUÍ: Copia manual de miembros ---
         portENTER_CRITICAL(&timerMux);
             for (int n = 0; n < NUM_TOP_FREQS; n++) {
                 last_top_peaks[n].freq = current_peaks[n].freq;
                 last_top_peaks[n].mag  = current_peaks[n].mag;
             }
         portEXIT_CRITICAL(&timerMux);
-        // -------------------------------------------------
 
         xTaskNotifyGive(samplingTaskHandle);
     }
