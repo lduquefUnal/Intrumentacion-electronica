@@ -52,17 +52,20 @@
   <main class="dashboard">
     <div class="chart-container">
       <canvas id="chart1"></canvas>
+      <button id="toggleModeBtn1" class="chart-mode-toggle">Modo: Continuo</button>
       <div id="fftDisplay" class="fft-info"></div>
     </div>
 
     <div class="chart-container">
       <canvas id="chart2"></canvas>
+      <button id="toggleModeBtn2" class="chart-mode-toggle">Modo: Continuo</button>
     </div>
 
     <div class="tank-visualizer">
       <div class="tank-header">
         <p>Distancia</p>
-        <p><span id="current-level">---</span> cm (<span id="current-voltage">---</span> V)</p>
+        <p><span id="current-level">---</span> cm  ± 0.1 cm</p>
+        <p><span id="current-voltage">---</span>   V  ± 0.1V</p>
       </div>
       <div class="tank-body">
         <div class="tank-scale">

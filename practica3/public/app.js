@@ -16,19 +16,29 @@ document.addEventListener("DOMContentLoaded", function () {
   const valueInput = document.getElementById('valueInput');                                                                                                                                       
   const fftDisplay = document.getElementById('fftDisplay');
 
+  // Nuevos botones para modo de gráfico
+  const toggleModeBtn1 = document.getElementById('toggleModeBtn1');
+  const toggleModeBtn2 = document.getElementById('toggleModeBtn2');
+
   let isPaused = false;
   let globalTime = 0;
 
   // Ventana de tiempo y muestreo
-  const chartWindow = 4000; // Ventana de 5 segundos (en ms) para chart1
-  const chart2Window = 1000; // Ventana de 10 segundos (en ms) para chart2
+  const chartWindow = 1000;// Ventana de 5 segundos (en ms) para chart1
+  const chart2Window = 500; // Ventana de 10 segundos (en ms) para chart2
   // Intervalo de actualización del gráfico. No necesita ser igual al del ESP32.
+  const chartModes = {
+    chart1: 'continuo', // 'continuo' o 'automatico'
+    chart2: 'continuo'
+  };
+
+
   const chartStep = 1000 / 30;
 
   const chartDefs = [
     {
       id: 'chart1', // El ID del canvas en tu HTML
-      label: 'mv onda AM (distancia)',
+      label: 'onda AM -fototransistor',
       color: 'red',
       yLabel: 'Amplitud (V)'
     },
@@ -164,6 +174,24 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   });
 
+  // Lógica para los botones de modo de gráfico
+  function setupToggleButtons() {
+    const buttons = { chart1: toggleModeBtn1, chart2: toggleModeBtn2 };
+    for (const chartId in buttons) {
+      if (buttons[chartId]) {
+        buttons[chartId].addEventListener('click', () => {
+          if (chartModes[chartId] === 'continuo') {
+            chartModes[chartId] = 'automatico';
+            buttons[chartId].textContent = 'Modo: Automático';
+          } else {
+            chartModes[chartId] = 'continuo';
+            buttons[chartId].textContent = 'Modo: Continuo';
+          }
+        });
+      }
+    }
+  }
+
   socket.on('serialLine', (line) => {
     // opcional: mostrar/guardar línea cruda
     // console.log('raw:', line);
@@ -221,15 +249,22 @@ document.addEventListener("DOMContentLoaded", function () {
 
       // --- Actualización de los lienzos de los gráficos ---
       Object.values(charts).forEach(chart => {
-        const window = chart.canvas.id === 'chart2' ? chart2Window : chartWindow;
+        const chartId = chart.canvas.id;
+        const window = chartId === 'chart2' ? chart2Window : chartWindow;
         const dataset = chart.data.datasets[0].data;
-        // Eliminar puntos viejos que ya no son visibles
-        while (dataset.length > 0 && dataset[0].x < time - window) {
-          dataset.shift();
+
+        if (chartModes[chartId] === 'continuo') {
+          // Modo Continuo: la ventana se desliza
+          while (dataset.length > 0 && dataset[0].x < time - window) {
+            dataset.shift();
+          }
+          chart.options.scales.x.min = time - window;
+          chart.options.scales.x.max = time;
+        } else {
+          // Modo Automático: el eje X se expande
+          chart.options.scales.x.min = null; // Chart.js ajusta automáticamente
+          chart.options.scales.x.max = null;
         }
-        // Actualizar la ventana de visualización del eje X
-        chart.options.scales.x.min = time - window;
-        chart.options.scales.x.max = time;
         chart.update('none');
       });
     }
@@ -315,5 +350,6 @@ document.addEventListener("DOMContentLoaded", function () {
   setStatus(false,'Desconectado');
 
   // Iniciar bucle de actualización
+  setupToggleButtons();
   updateCharts();
 });

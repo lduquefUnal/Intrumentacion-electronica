@@ -70,19 +70,28 @@ io.on('connection', (socket) => {
           }
 
           try {
+            // Intenta parsear el buffer como un objeto JSON.
             const parsed = JSON.parse(serialBuffer);
             
-            if (parsed.real) {
-              const sum = parsed.real.reduce((acc, val) => acc + val, 0);
-              const avg = parsed.real.length > 0 ? sum / parsed.real.length : 0;
+            // El nuevo formato envía todo en un solo JSON: {"adc": [...], "am": [...], "fft": [...]}
+            
+            // 1. Procesar datos del ADC para el promedio (antes 'real')
+            if (parsed.adc && Array.isArray(parsed.adc)) {
+              const sum = parsed.adc.reduce((acc, val) => acc + val, 0);
+              const avg = parsed.adc.length > 0 ? sum / parsed.adc.length : 0;
               io.emit('avgData', avg);
-            } else if (parsed.fft) {
-              io.emit('fftData', parsed.fft);
-            } else if (parsed.onda && Array.isArray(parsed.onda)) {
-              io.emit('ondaData', parsed.onda);
             }
             
-            io.emit('serialLine', serialBuffer);
+            // 2. Procesar datos de la onda AM (antes 'onda')
+            if (parsed.am && Array.isArray(parsed.am)) {
+              io.emit('ondaData', parsed.am);
+            }
+            
+            // 3. Procesar datos de FFT
+            if (parsed.fft) {
+              io.emit('fftData', parsed.fft);
+            }
+            
             serialBuffer = ''; // Limpiar buffer después de un parseo exitoso
           } catch (e) {
             // Si JSON.parse falla, el JSON está incompleto. Salimos del bucle y esperamos más datos.
