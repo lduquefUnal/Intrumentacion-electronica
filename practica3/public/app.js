@@ -99,7 +99,6 @@ document.addEventListener("DOMContentLoaded", function () {
           }
         },
         y: {
-          title: { display: true, text: def.yLabel }
           // El rango del eje Y se ajustará automáticamente por defecto
         }
       },

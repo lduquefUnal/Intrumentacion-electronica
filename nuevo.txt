@@ -1,18 +1,14 @@
 /*
- * Práctica 3 - Generador AM con procesamiento FFT
- * TRES SALIDAS POR SERIAL:
+ * Práctica 3 - Generador AM
+ * DOS SALIDAS POR SERIAL:
  * 1. {"am": [...]}     - Onda AM calculada (valores DAC convertidos a voltaje)
  * 2. {"adc": [...]}    - Lecturas directas del ADC (señal física)
- * 3. {"fft": [...]}    - Resultados del análisis espectral
- * 
- * IMPORTANTE: Cable físico PIN 25 → PIN 32 para FFT válida
  */
 
 #include <Arduino.h> 
 #include "driver/adc.h"
 #include "driver/gptimer.h"
 #include "driver/dac.h"
-#include "arduinoFFT.h"
 #include <math.h>
 
 // Selección del canal DAC (GPIO 25 es DAC_CHANNEL_1)
@@ -20,7 +16,7 @@
 
 // --- PINES (ESP32 DEVKIT V1) ---
 const int dacPin = 25;             // Salida DAC
-const int adcPin = 32;             // Entrada ADC (Retroalimentación para FFT)
+const int adcPin = 32;             // Entrada ADC (Retroalimentación)
 
 // --- PARÁMETROS DE LA SEÑAL AM ---
 volatile float freqP  = 1000.0f;    // Portadora (Hz)
@@ -28,37 +24,20 @@ volatile float freqM  = 100.0f;     // Moduladora (Hz)
 volatile float m_index = 0.8f;      // Índice
 volatile float A_c    = 1.0f;
 
-#define NUM_TOP_FREQS 3 
-
-// Estructura para almacenar un par Frecuencia-Magnitud
-struct FftPeak {
-    float freq;
-    float mag;
-};
-
-// Variable global para almacenar el último resultado de la FFT
-volatile FftPeak last_top_peaks[NUM_TOP_FREQS];
-
 // --- CONFIGURACIÓN CRÍTICA DE TIEMPO ---
-#define SAMPLE_RATE_HZ      50000UL 
+#define SAMPLE_RATE_HZ      50000UL  // 50 kHz para ~50 puntos por ciclo de 1 kHz
 
-// --- CONFIGURACIÓN FFT ---
-#define FFT_SAMPLES 512
-const int NUM_DATOS_JSON = 30;  // Muestras por paquete JSON
+const int NUM_DATOS_JSON = 50;  // Muestras por paquete JSON (envío)
+const int DECIMATOR = 10;       // Guardar 1 de cada 10 muestras para enviar (DAC sigue a SAMPLE_RATE_HZ)
 
-// Buffers de tiempo (Doble Buffer)
-static double vRealBuf[2][FFT_SAMPLES];
-static double vImagBuf[2][FFT_SAMPLES];
-
-// Control de buffers
-volatile int currentBuffer = 0;        
-volatile int bufferIndex   = 0;        
-volatile bool bufferReady[2] = {false, false}; 
-
-// Handles de Tareas y Colas
+// Handles de Tareas
 TaskHandle_t samplingTaskHandle = NULL;
-QueueHandle_t samplingQueue = NULL;
-TaskHandle_t fftTaskHandle = NULL;
+TaskHandle_t commTaskHandle = NULL;
+
+// Buffer de envío (doble buffer simple)
+volatile bool sendSlotReady = false;
+float sendSlotAM[NUM_DATOS_JSON];
+float sendSlotADC[NUM_DATOS_JSON];
 
 // Sistema Timer
 gptimer_handle_t gptimer = NULL;
@@ -73,7 +52,7 @@ const float DOS_PI = 6.28318530718f;
 bool IRAM_ATTR onTimer(gptimer_handle_t timer, const gptimer_alarm_event_data_t *edata, void *user_ctx);
 void procesarComando(const String &cmd);
 void taskSampling(void *param);
-void taskFFT(void *param);
+void taskComm(void *param);
 
 void setup() {
     Serial.begin(115200);
@@ -112,14 +91,44 @@ void setup() {
     gptimer_start(gptimer);
 
     // Crear Tareas
-    samplingQueue = xQueueCreate(1, sizeof(uint8_t));
-    
-    // Core 0: Muestreo (Prioridad Alta)
-    xTaskCreatePinnedToCore(taskSampling, "samplingTask", 8192, NULL, 2, &samplingTaskHandle, 0);
-    // Core 1: FFT (Prioridad Menor)
-    xTaskCreatePinnedToCore(taskFFT,      "fftTask",      10240, NULL, 1, &fftTaskHandle,        1);
+    // Core 0: generación (alta prioridad)
+    xTaskCreatePinnedToCore(taskSampling, "samplingTask", 8192, NULL, 4, &samplingTaskHandle, 0);
+    // Core 1: comunicación (baja prioridad)
+    xTaskCreatePinnedToCore(taskComm, "commTask", 6144, NULL, 1, &commTaskHandle, 1);
 
-    Serial.println("--- Generador AM: 3 Salidas (AM/ADC/FFT) ---");
+    Serial.println("--- Generador AM: 2 Salidas (AM/ADC) ---");
+}
+
+// --- TAREA DE COMUNICACIÓN (Core 1) ---
+void taskComm(void *param) {
+    static char linea[640];
+    float localAM[NUM_DATOS_JSON];
+    float localADC[NUM_DATOS_JSON];
+
+    for (;;) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        if (!sendSlotReady) continue;
+
+        portENTER_CRITICAL(&timerMux);
+            for (int i = 0; i < NUM_DATOS_JSON; i++) {
+                localAM[i]  = sendSlotAM[i];
+                localADC[i] = sendSlotADC[i];
+            }
+            sendSlotReady = false;
+        portEXIT_CRITICAL(&timerMux);
+
+        int idx = 0;
+        idx += snprintf(linea + idx, sizeof(linea) - idx, "{\"am\":[");
+        for (int i = 0; i < NUM_DATOS_JSON; i++) {
+            idx += snprintf(linea + idx, sizeof(linea) - idx, "%.3f%s", localAM[i], (i == NUM_DATOS_JSON - 1) ? "" : ",");
+        }
+        idx += snprintf(linea + idx, sizeof(linea) - idx, "],\"adc\":[");
+        for (int i = 0; i < NUM_DATOS_JSON; i++) {
+            idx += snprintf(linea + idx, sizeof(linea) - idx, "%.3f%s", localADC[i], (i == NUM_DATOS_JSON - 1) ? "" : ",");
+        }
+        idx += snprintf(linea + idx, sizeof(linea) - idx, "]}");
+        Serial.println(linea);
+    }
 }
 
 void loop() {
@@ -134,10 +143,9 @@ void loop() {
 
 // --- ISR DEL TIMER ---
 bool IRAM_ATTR onTimer(gptimer_handle_t timer, const gptimer_alarm_event_data_t *edata, void *user_ctx) {
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    uint8_t dummy = 0;
-    xQueueOverwriteFromISR(samplingQueue, &dummy, &xHigherPriorityTaskWoken);
-    return (xHigherPriorityTaskWoken == pdTRUE);
+    BaseType_t hpTaskWoken = pdFALSE;
+    vTaskNotifyGiveFromISR(samplingTaskHandle, &hpTaskWoken);
+    return (hpTaskWoken == pdTRUE);
 }
 
 void procesarComando(const String &cmd) {
@@ -160,19 +168,14 @@ void procesarComando(const String &cmd) {
 
 // --- TAREA DE MUESTREO Y GENERACIÓN ---
 void taskSampling(void *param) {
-    static char linea[512];      
-    static int conteoJson = 0;   
-    static int idx = 0;          
-    static float vAM[NUM_DATOS_JSON];    
-    static float vADC[NUM_DATOS_JSON];   
-    
-    // VARIABLES NUEVAS PARA CONTROL DE ENVÍO
+    static int conteoJson = 0;
+    static float vAM[NUM_DATOS_JSON];
+    static float vADC[NUM_DATOS_JSON];
     static int envioCounter = 0;
-    const int ENVIO_RATE = 20;  // Enviar cada 20 ciclos
+    const int ENVIO_RATE = 5;  // Enviar con mayor frecuencia
     
     while (true) {
-        uint8_t dummy; 
-        xQueueReceive(samplingQueue, &dummy, portMAX_DELAY);
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         
         // 1. GENERACIÓN AM
         portENTER_CRITICAL(&timerMux); 
@@ -202,31 +205,14 @@ void taskSampling(void *param) {
         
         // 2. LECTURA ADC (señal física)
         int adcRaw = analogRead(adcPin); 
+
         
-        // 3. BUFFER FFT
-        bool notify_fft = false; 
-        
-        portENTER_CRITICAL(&timerMux); 
-            vRealBuf[currentBuffer][bufferIndex] = (double)adcRaw; 
-            vImagBuf[currentBuffer][bufferIndex] = 0.0; 
-            bufferIndex++; 
-            
-            if (bufferIndex >= FFT_SAMPLES) { 
-                bufferReady[currentBuffer] = true; 
-                notify_fft = true; 
-                currentBuffer = 1 - currentBuffer; 
-                bufferIndex = 0; 
-            }
-        portEXIT_CRITICAL(&timerMux); 
-        
-        if (notify_fft) {
-            xTaskNotifyGive(fftTaskHandle); 
-        } 
+
         // 4. RECOLECCIÓN DE DATOS PARA SERIAL (decimado)
         static int decimator = 0;
         decimator++;
         
-        if (decimator >= 10) {
+        if (decimator >= DECIMATOR) { // tomar 1 de cada N muestras para envío; DAC sigue a SAMPLE_RATE_HZ
             decimator = 0;
             
             envioCounter++;  // Contador para control de envío
@@ -238,129 +224,19 @@ void taskSampling(void *param) {
             }
         }
 
-        // 5. ENVÍO DE DATOS COMBINADO (AM, ADC y FFT)
-        if (conteoJson >= NUM_DATOS_JSON && envioCounter >= ENVIO_RATE) {
+        // 5. PASAR BUFFER A LA TAREA DE COMUNICACIÓN
+        if (conteoJson >= NUM_DATOS_JSON && envioCounter >= ENVIO_RATE && !sendSlotReady) {
             envioCounter = 0;
-            
-            // Copiar picos FFT actuales (corrección del error)
-            FftPeak current_peaks_copy[NUM_TOP_FREQS];
-            
             portENTER_CRITICAL(&timerMux);
-                for (int n = 0; n < NUM_TOP_FREQS; n++) {
-                    current_peaks_copy[n].freq = last_top_peaks[n].freq;
-                    current_peaks_copy[n].mag = last_top_peaks[n].mag;
+                for (int i = 0; i < NUM_DATOS_JSON; i++) {
+                    sendSlotAM[i]  = vAM[i];
+                    sendSlotADC[i] = vADC[i];
                 }
+                sendSlotReady = true;
+                conteoJson = 0;
             portEXIT_CRITICAL(&timerMux);
-            
-            // JSON COMBINADO (todos los datos en uno)
-            idx = 0;
-            
-            // Parte AM
-            idx += snprintf(linea + idx, sizeof(linea) - idx, "{\"am\":[");
-            for (int i = 0; i < NUM_DATOS_JSON; i++) {
-                idx += snprintf(linea + idx, sizeof(linea) - idx, 
-                               "%.1f%s", vAM[i], (i == NUM_DATOS_JSON - 1) ? "" : ",");
-            }
-            
-            // Parte ADC
-            idx += snprintf(linea + idx, sizeof(linea) - idx, "],\"adc\":[");
-            for (int i = 0; i < NUM_DATOS_JSON; i++) {
-                idx += snprintf(linea + idx, sizeof(linea) - idx, 
-                               "%.1f%s", vADC[i], (i == NUM_DATOS_JSON - 1) ? "" : ",");
-            }
-            
-            // Parte FFT (LOS 3 PICOS MÁS ALTOS)
-            idx += snprintf(linea + idx, sizeof(linea) - idx, "],\"fft\":[");
-            
-            bool first = true;
-            for (int n = 0; n < NUM_TOP_FREQS; n++) {
-                if (current_peaks_copy[n].mag > 1.0f) {  // Umbral mínimo
-                    if (!first) {
-                        idx += snprintf(linea + idx, sizeof(linea) - idx, ",");
-                    }
-                    // Enviar los 3 picos más altos
-                    idx += snprintf(linea + idx, sizeof(linea) - idx, 
-                                   "{\"f\":%.1f,\"m\":%.1f}", 
-                                   current_peaks_copy[n].freq, current_peaks_copy[n].mag);
-                    first = false;
-                }
-            }
-            
-            idx += snprintf(linea + idx, sizeof(linea) - idx, "]}");
-            Serial.println(linea);
-            
-            conteoJson = 0;
+            xTaskNotifyGive(commTaskHandle);
         }
-        
-        // 6. ELIMINAR LA SECCIÓN DE FFT SEPARADA (ya está incluida arriba)
-        // ... resto del código ...
-    }
-}
-
-// --- TAREA FFT ---
-void taskFFT(void *param) {
-    static double vReal[FFT_SAMPLES];
-    static double vImag[FFT_SAMPLES];
-    ArduinoFFT<double> FFT = ArduinoFFT<double>(vReal, vImag, FFT_SAMPLES, SAMPLE_RATE_HZ);
-    
-    FftPeak current_peaks[NUM_TOP_FREQS];
-    const int SEARCH_SIZE = FFT_SAMPLES / 2;
-    double temp_mag[SEARCH_SIZE];
-
-    while (true) {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        
-        int bufToProcess = -1;
-        portENTER_CRITICAL(&timerMux);
-        if (bufferReady[0]) bufToProcess = 0;
-        else if (bufferReady[1]) bufToProcess = 1;
-        
-        if (bufToProcess >= 0) {
-            for (int i = 0; i < FFT_SAMPLES; i++) {
-                vReal[i] = vRealBuf[bufToProcess][i];
-                vImag[i] = 0.0;
-            }
-            bufferReady[bufToProcess] = false;
-        }
-        portEXIT_CRITICAL(&timerMux);
-
-        if (bufToProcess < 0) continue;
-
-        FFT.windowing(FFTWindow::Hamming, FFTDirection::Forward);
-        FFT.compute(FFTDirection::Forward);
-        FFT.complexToMagnitude();
-
-        for (int i = 0; i < SEARCH_SIZE; i++) temp_mag[i] = vReal[i];
-        temp_mag[0] = 0.0; // Borrar DC
-
-        for (int n = 0; n < NUM_TOP_FREQS; n++) {
-            double max_val = 0.0;
-            int max_index = 0;
-            
-            for (int i = 1; i < SEARCH_SIZE; i++) { 
-                if (temp_mag[i] > max_val) {
-                    max_val = temp_mag[i];
-                    max_index = i;
-                }
-            }
-            
-            if (max_index == 0) {
-                current_peaks[n] = {0.0f, 0.0f};
-            } else {
-                double freqBin = ((double)max_index * (double)SAMPLE_RATE_HZ) / (double)FFT_SAMPLES;
-                current_peaks[n].freq = (float)freqBin;
-                current_peaks[n].mag = (float)max_val;
-                temp_mag[max_index] = 0.0; 
-            }
-        }
-        
-        portENTER_CRITICAL(&timerMux);
-            for (int n = 0; n < NUM_TOP_FREQS; n++) {
-                last_top_peaks[n].freq = current_peaks[n].freq;
-                last_top_peaks[n].mag  = current_peaks[n].mag;
-            }
-        portEXIT_CRITICAL(&timerMux);
-
-        xTaskNotifyGive(samplingTaskHandle);
+        // 6. FIN DEL CICLO
     }
 }
