@@ -4,7 +4,7 @@ import { TileHeader } from './TileHeader';
 
 function SettingsModal({ tile, onSave, onCancel, sourceOptions }) {
   const [title, setTitle] = useState(tile.title || 'Medidor');
-  const [sourceKey, setSourceKey] = useState(tile.sourceKey);
+  const [sourceKey, setSourceKey] = useState(tile.sourceKey || '');
   const [sourceIndex, setSourceIndex] = useState(tile.sourceIndex || 0);
   const [min, setMin] = useState(tile.min || 0);
   const [max, setMax] = useState(tile.max || 100);

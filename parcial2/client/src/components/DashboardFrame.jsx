@@ -6,6 +6,7 @@ import { ControlSliderTile } from './tiles/ControlSliderTile';
 import { CommandButtonTile } from './tiles/CommandButtonTile';
 import { TankVisualizerTile } from './tiles/TankVisualizerTile';
 import { FFTTile } from './tiles/FFTTile';
+import { LedTile } from './tiles/LedTile';
 
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
@@ -20,6 +21,7 @@ const TILE_TYPES = {
   button: CommandButtonTile,
   tank: TankVisualizerTile,
   fft: FFTTile,
+  led: LedTile,
 };
 
 const STORAGE_KEY = 'dashboard-tiles-v2';
@@ -69,18 +71,14 @@ export function DashboardFrame({ dataSources, globalTime, onSendCommand }) {
 
   const addTile = (type) => {
     const sourceKeys = Object.keys(dataSources);
-    if (sourceKeys.length === 0) {
-      // No se pueden añadir widgets si no hay fuentes de datos
-      alert("Por favor, espera a que se establezca una conexión de datos para añadir widgets.");
-      return;
-    }
 
     const id = String(Date.now());
+    const defaultSourceKey = sourceKeys[0] || '';
     let newTile = {
       id,
       type,
       title: 'Nuevo Widget',
-      sourceKey: sourceKeys[0], // Asignar la primera fuente de datos por defecto
+      sourceKey: defaultSourceKey, // Si no hay fuente aún, queda vacío y se asignará al conectar
       sourceIndex: 0,
       isStatic: false,
       i: id,
@@ -101,6 +99,9 @@ export function DashboardFrame({ dataSources, globalTime, onSendCommand }) {
     }
     if (type === 'fft') {
         newTile = { ...newTile, title: 'Análisis FFT', fftWindowSize: 1024, sampleRate: 50000, freqMin: 0, freqMax: 25000, h: 8 };
+    }
+    if (type === 'led') {
+      newTile = { ...newTile, title: 'Diodo LED', cmd: 'LED', valueOn: '1', valueOff: '0', w: 2, h: 3 };
     }
 
     setTiles((prev) => [...prev, newTile]);
@@ -139,12 +140,13 @@ export function DashboardFrame({ dataSources, globalTime, onSendCommand }) {
         {!areDataSourcesAvailable && (
           <span className="waiting-for-data">Esperando datos...</span>
         )}
-        <button onClick={() => addTile('line')} disabled={!areDataSourcesAvailable}>+ Line Chart</button>
-        <button onClick={() => addTile('gauge')} disabled={!areDataSourcesAvailable}>+ Gauge</button>
-        <button onClick={() => addTile('slider')} disabled={!areDataSourcesAvailable}>+ Slider PWM</button>
-        <button onClick={() => addTile('button')} disabled={!areDataSourcesAvailable}>+ Botón Toggle</button>
-        <button onClick={() => addTile('tank')} disabled={!areDataSourcesAvailable}>+ Tanque</button>
-        <button onClick={() => addTile('fft')} disabled={!areDataSourcesAvailable}>+ FFT Analyzer</button>
+        <button onClick={() => addTile('line')}>+ Line Chart</button>
+        <button onClick={() => addTile('gauge')}>+ Gauge</button>
+        <button onClick={() => addTile('slider')}>+ Slider PWM</button>
+        <button onClick={() => addTile('button')}>+ Botón Toggle</button>
+        <button onClick={() => addTile('tank')}>+ Tanque</button>
+        <button onClick={() => addTile('fft')}>+ FFT Analyzer</button>
+        <button onClick={() => addTile('led')}>+ Diodo LED</button>
       </aside>
 
       <section className="tiles-area">

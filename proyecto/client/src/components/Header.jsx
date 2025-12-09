@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 export function Header({
   ports,
@@ -9,13 +9,30 @@ export function Header({
   sendCommand,
   commandResponse,
   isPaused,
-  setIsPaused
+  setIsPaused,
+  sampleRateHz,
+  setSampleRateHz
 }) {
   const [command, setCommand] = useState('FP');
   const [commandValue, setCommandValue] = useState('');
+  const [customCommand, setCustomCommand] = useState('');
+  const [sampleRateInput, setSampleRateInput] = useState(sampleRateHz || 50000);
+
+  useEffect(() => {
+    setSampleRateInput(sampleRateHz || 50000);
+  }, [sampleRateHz]);
 
   const handleSendCommand = () => {
-    sendCommand(command, commandValue);
+    const cmdToSend = command === 'CUSTOM' ? customCommand.trim() : command;
+    if (!cmdToSend) return;
+    sendCommand(cmdToSend, commandValue);
+  };
+
+  const handleApplySampleRate = () => {
+    const nextRate = Number(sampleRateInput);
+    if (Number.isFinite(nextRate) && nextRate > 0) {
+      setSampleRateHz(nextRate);
+    }
   };
 
   return (
@@ -57,14 +74,47 @@ export function Header({
             <option value="FM">Frec. Moduladora (Hz)</option>
             <option value="IDX">Índice Modulación (0-1)</option>
             <option value="AC">Amplitud Portadora</option>
+            <option value="CUSTOM">Personalizado</option>
           </select>
-          <input type="number" value={commandValue} onChange={e => setCommandValue(e.target.value)} placeholder="valor" step="any" style={{ width: '110px' }} />
+          {command === 'CUSTOM' && (
+            <input
+              type="text"
+              value={customCommand}
+              onChange={e => setCustomCommand(e.target.value)}
+              placeholder="Comando"
+              style={{ width: '120px' }}
+            />
+          )}
+          <input
+            type="text"
+            value={commandValue}
+            onChange={e => setCommandValue(e.target.value)}
+            placeholder="valor"
+            style={{ width: '110px' }}
+          />
           <button onClick={handleSendCommand}>Enviar</button>
         </div>
         <div className="status-message">{commandResponse}</div>
         <div id="controls">
           <button onClick={() => setIsPaused(true)} disabled={isPaused}>Pausa</button>
           <button onClick={() => setIsPaused(false)} disabled={!isPaused}>Continuar</button>
+        </div>
+        <div className="sample-rate">
+          <label htmlFor="sampleRateInput">Frecuencia de muestreo (Hz)</label>
+          <div className="input-group">
+            <input
+              id="sampleRateInput"
+              type="number"
+              value={sampleRateInput}
+              onChange={(e) => setSampleRateInput(e.target.value)}
+              placeholder="50000"
+              min="1"
+              step="1"
+              style={{ width: '110px' }}
+            />
+            <button onClick={handleApplySampleRate}>Aplicar</button>
+          </div>
+          <small>Aplica para todos los streams (eje de tiempo).</small>
         </div>
       </div>
     </header>

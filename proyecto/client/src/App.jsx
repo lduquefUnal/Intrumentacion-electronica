@@ -33,6 +33,8 @@ function App() {
     setIsPaused,
     dataStreams, // Obtener el nuevo estado
     globalTime,
+    sampleRateHz,
+    setSampleRateHz,
     connectPort,
     sendCommand
   } = useSocket();
@@ -49,6 +51,8 @@ function App() {
         commandResponse={commandResponse}
         isPaused={isPaused}
         setIsPaused={setIsPaused}
+        sampleRateHz={sampleRateHz}
+        setSampleRateHz={setSampleRateHz}
       />
 
       {/* Pasar dataStreams directamente como dataSources */}

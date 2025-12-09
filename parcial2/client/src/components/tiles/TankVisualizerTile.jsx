@@ -4,7 +4,7 @@ import { TileHeader } from './TileHeader';
 
 function SettingsModal({ tile, onSave, onCancel, sourceOptions }) {
   const [title, setTitle] = useState(tile.title);
-  const [sourceKey, setSourceKey] = useState(tile.sourceKey);
+  const [sourceKey, setSourceKey] = useState(tile.sourceKey || '');
   const [sourceIndex, setSourceIndex] = useState(tile.sourceIndex || 0);
   const [units, setUnits] = useState(tile.units || 'cm');
   const [min, setMin] = useState(tile.min || 0);

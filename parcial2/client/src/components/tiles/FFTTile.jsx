@@ -4,7 +4,7 @@ import { TileHeader } from './TileHeader';
 
 function SettingsModal({ tile, onSave, onCancel, sourceOptions }) {
   const [title, setTitle] = useState(tile.title || 'Análisis FFT');
-  const [sourceKey, setSourceKey] = useState(tile.sourceKey);
+  const [sourceKey, setSourceKey] = useState(tile.sourceKey || '');
   const [fftWindowSize, setFftWindowSize] = useState(tile.fftWindowSize || 1024);
   const [sampleRate, setSampleRate] = useState(tile.sampleRate || 50000); // Frecuencia de muestreo en Hz
   const [freqMin, setFreqMin] = useState(tile.freqMin ?? 0);
