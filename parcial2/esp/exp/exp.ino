@@ -13,7 +13,7 @@ const int frecuencia = 5000;
 const int resolucion = 8;    
 
 // --- CALIBRACIÓN DE UMBRAL ---
-const int UMBRAL = 1700; // Ajusta este valor si es necesario
+const int UMBRAL = 1750;
 
 // Variables
 int lecturaTemp = 0;
