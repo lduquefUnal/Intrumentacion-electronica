@@ -178,3 +178,69 @@
 .modal-actions button:last-of-type {
   background-color: #f1f1f1;
 }
+
+.led-content {
+  flex-direction: column;
+  gap: 12px;
+}
+
+.led-indicator {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  box-shadow:
+    0 0 12px rgba(0, 0, 0, 0.15),
+    inset 0 -6px 10px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.led-indicator.on {
+  background: radial-gradient(circle at 30% 30%, #b3ffd0, #2ecc71 60%);
+  box-shadow:
+    0 0 16px rgba(46, 204, 113, 0.7),
+    0 0 32px rgba(46, 204, 113, 0.5),
+    inset 0 -6px 10px rgba(0, 0, 0, 0.2);
+  transform: scale(1.02);
+}
+
+.led-indicator.off {
+  background: radial-gradient(circle at 30% 30%, #ffc7c7, #e74c3c 60%);
+  box-shadow:
+    0 0 16px rgba(231, 76, 60, 0.5),
+    0 0 32px rgba(231, 76, 60, 0.35),
+    inset 0 -6px 10px rgba(0, 0, 0, 0.25);
+}
+
+.led-controls {
+  display: flex;
+  gap: 10px;
+}
+
+.led-btn {
+  padding: 10px 14px;
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.1s ease, opacity 0.2s ease;
+}
+
+.led-btn.on {
+  background-color: #2ecc71;
+  box-shadow: 0 4px 10px rgba(46, 204, 113, 0.4);
+}
+
+.led-btn.off {
+  background-color: #e74c3c;
+  box-shadow: 0 4px 10px rgba(231, 76, 60, 0.4);
+}
+
+.led-btn:hover {
+  transform: translateY(-1px);
+  opacity: 0.95;
+}
+
+.led-btn:active {
+  transform: translateY(0);
+}

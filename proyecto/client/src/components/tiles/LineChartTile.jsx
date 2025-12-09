@@ -4,7 +4,7 @@ import { TileHeader } from './TileHeader'; // 1. Importar
 
 function SettingsModal({ tile, onSave, onCancel, sourceOptions }) {
   const [title, setTitle] = useState(tile.title);
-  const [sourceKey, setSourceKey] = useState(tile.sourceKey);
+  const [sourceKey, setSourceKey] = useState(tile.sourceKey || '');
   const [sourceIndex, setSourceIndex] = useState(tile.sourceIndex || 0);
   const [yLabel, setYLabel] = useState(tile.yLabel || 'Valor');
   const [window, setWindow] = useState(tile.window || 5000);

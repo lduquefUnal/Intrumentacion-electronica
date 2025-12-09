@@ -15,6 +15,7 @@ export function useSocket() {
   const [commandResponse, setCommandResponse] = useState('Conectado al servidor');
   const [isPaused, setIsPaused] = useState(false);
   const [dataStreams, setDataStreams] = useState({});
+  const [sampleRateHz, setSampleRateHz] = useState(50000);
   const globalTime = useRef(0);
 
   useEffect(() => {
@@ -42,8 +43,8 @@ export function useSocket() {
       if (isPaused || typeof dataObject !== 'object' || dataObject === null) return;
 
       // Debe coincidir con SAMPLE_RATE_HZ del firmware (ver nuevo.txt)
-      const SAMPLE_RATE_HZ = 50000;
-      const timeIncrementMs = 1000 / SAMPLE_RATE_HZ; // Time between each sample in the array
+      const effectiveRate = sampleRateHz > 0 ? sampleRateHz : 1;
+      const timeIncrementMs = 1000 / effectiveRate; // Time between each sample in the array
 
       setDataStreams(prevStreams => {
         const newStreams = { ...prevStreams };
@@ -86,7 +87,7 @@ export function useSocket() {
       socket.off('commandResponse');
       socket.off('data');
     };
-  }, [isPaused]);
+  }, [isPaused, sampleRateHz]);
 
   const connectPort = () => {
     if (selectedPort) {
@@ -109,6 +110,8 @@ export function useSocket() {
     setIsPaused,
     dataStreams,
     globalTime,
+    sampleRateHz,
+    setSampleRateHz,
     connectPort,
     sendCommand
   };
