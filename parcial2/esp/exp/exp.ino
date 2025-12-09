@@ -1,16 +1,19 @@
 /*
  * Control de Temperatura (PWM) con Umbral y Lectura de LDR
- * MODIFICACIÓN: Salida de datos en formato JSON
+ * MODIFICACIÓN: Salida JSON con valores en corchetes []
  */
 
 // --- Definición de Pines ---
-const int pinTermistor = 32; // Entrada voltaje termistor
-const int pinLDR = 33;       // Entrada voltaje fotorresistencia
-const int pinPWM = 25;       // Salida hacia la base del transistor
+const int pinTermistor = 32; 
+const int pinLDR = 33;       
+const int pinPWM = 25;       
 
 // --- Configuración del PWM ---
-const int frecuencia = 5000; // 5 KHz
-const int resolucion = 8;    // 8 bits (0-255)
+const int frecuencia = 5000; 
+const int resolucion = 8;    
+
+// --- CALIBRACIÓN DE UMBRAL ---
+const int UMBRAL = 1700; // Ajusta este valor si es necesario
 
 // Variables
 int lecturaTemp = 0;
@@ -23,47 +26,46 @@ void setup() {
   pinMode(pinTermistor, INPUT);
   pinMode(pinLDR, INPUT);
 
-  // --- CONFIGURACIÓN PWM (Versión 3.0+) ---
   ledcAttach(pinPWM, frecuencia, resolucion);
 
-  Serial.println("--- Sistema Iniciado con Umbral > 1700 ---");
+  Serial.println("--- Sistema Iniciado ---");
 }
 
 void loop() {
   // 1. Lectura del Termistor
   lecturaTemp = analogRead(pinTermistor); 
   
-  // --- LÓGICA DEL UMBRAL ---
-  if (lecturaTemp < 1700) {
-    // Si la temperatura es baja (menos de 1700), apagamos todo.
+  // Lógica del Umbral
+  if (lecturaTemp < UMBRAL) {
     cicloTrabajo = 0;
   } else {
-    // Si supera 1700, calculamos el PWM proporcional.
-    cicloTrabajo = map(lecturaTemp, 1700, 4095, 0, 255);
+    cicloTrabajo = map(lecturaTemp, UMBRAL, 4095, 0, 255);
   }
-
-  // Asegurarnos de que no se pase de 255
   cicloTrabajo = constrain(cicloTrabajo, 0, 255);
 
-  // --- ESCRIBIR PWM ---
+  // Escribir PWM
   ledcWrite(pinPWM, cicloTrabajo);
 
-  // 2. Lectura de la Fotorresistencia (LDR)
+  // 2. Lectura de la Fotorresistencia
   lecturaLDR = analogRead(pinLDR);
   float voltajeLDR = (lecturaLDR * 3.3) / 4095.0;
 
-  // 3. Monitor Serial (FORMATO JSON)
-  // Estructura: {"temp_adc": 1234, "pwm_duty": 100, "ldr_adc": 2000, "ldr_voltage": 1.65}
-  
-  Serial.print("{\"temp_adc\":");
+  // 3. Monitor Serial (FORMATO JSON CON CORCHETES)
+  // Estructura deseada: {"temp_adc":[1846],"pwm_duty":[15], ...}
+
+  Serial.print("{\"temp_adc\":[");      // Abre JSON y corchete
   Serial.print(lecturaTemp);
-  Serial.print(",\"pwm_duty\":");
+  
+  Serial.print("],\"pwm_duty\":[");     // Cierra anterior, coma, abre nuevo
   Serial.print(cicloTrabajo);
-  Serial.print(",\"ldr_adc\":");
+  
+  Serial.print("],\"ldr_adc\":[");      // Cierra anterior, coma, abre nuevo
   Serial.print(lecturaLDR);
-  Serial.print(",\"ldr_voltage\":");
+  
+  Serial.print("],\"ldr_voltage\":[");  // Cierra anterior, coma, abre nuevo
   Serial.print(voltajeLDR);
-  Serial.println("}"); // Cierra el JSON y salto de línea
+  
+  Serial.println("]}");                 // Cierra último corchete y llave JSON
 
   delay(100);
 }
