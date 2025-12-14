@@ -27,8 +27,8 @@ const int pinMotor1 = 16;  // PWM Independiente 1
 const int pinMotor2 = 17;  // PWM Independiente 2
 
 // ————— CONFIGURACIÓN DE TIEMPO Y MUESTREO —————
-#define SAMPLE_PERIOD_MS  10
-#define SAMPLE_RATE_HZ    100
+#define SAMPLE_PERIOD_MS  1
+#define SAMPLE_RATE_HZ    1000
 
 // ————— PARÁMETROS ONDA SENOIDAL IR (GPIO 25) —————
 volatile float freqSeno = 1.0f;   // Hz
@@ -65,7 +65,7 @@ enum EstadoLuz {
 volatile EstadoLuz estadoActual = MODO_OFF;
 
 // ————— TRANSMISIÓN Y BUFFERS —————
-const int NUM_DATOS_JSON = 10; 
+const int NUM_DATOS_JSON = 30; 
 const int DECIMATOR_VAL  = 1;   
 
 TaskHandle_t samplingTaskHandle = NULL;
@@ -151,7 +151,7 @@ void setup() {
     Serial.println("  STATE=0/1/2   -> Luz (0=OFF,1=LED_IR,2=LASER)");
     Serial.println("  DC1=0-100     -> Motor 1 (Pin 16)");
     Serial.println("  DC2=0-100     -> Motor 2 (Pin 17)");
-    Serial.println("  FP=HZ         -> Frec PWM (Ambos)");
+    Serial.println("  LPM=40-220    -> Latidos por Minuto (Simulacion Cardiaca)");
     Serial.println("  FREQ=HZ, AMP=0.0-1.0     -> Onda IR");
     Serial.println("  L_FREQ=HZ, L_AMP=V, L_OFF=V -> Onda Laser");
     Serial.println("========================================");
@@ -303,23 +303,21 @@ void taskComm(void *param) {
         if (!hayDatos) continue;
 
         int n = 0;
+        
+        // 1. Encabezado
         n += snprintf(bufferTx + n, sizeof(bufferTx) - n,
-                      "{\"s\":%d,\"dc1\":%.1f,\"dc2\":%.1f,\"ref\":[",
+                      "{\"s\":%d,\"dc1\":%.1f,\"dc2\":%.1f,\"adc\":[",
                       (int)estadoLocal, dc1Local, dc2Local);
 
-        for (int i = 0; i < NUM_DATOS_JSON; i++) {
-            n += snprintf(bufferTx + n, sizeof(bufferTx) - n,
-                          "%.3f%s", localRef[i],
-                          (i == NUM_DATOS_JSON - 1) ? "" : ",");
-        }
 
-        n += snprintf(bufferTx + n, sizeof(bufferTx) - n, "],\"adc\":[");
-        
+        // 2. Ciclo que imprime los datos del ADC 
         for (int i = 0; i < NUM_DATOS_JSON; i++) {
             n += snprintf(bufferTx + n, sizeof(bufferTx) - n,
                           "%.3f%s", localADC[i],
                           (i == NUM_DATOS_JSON - 1) ? "" : ",");
         }
+
+        // 3. Cierre del JSON
         n += snprintf(bufferTx + n, sizeof(bufferTx) - n, "]}");
 
         Serial.println(bufferTx);
@@ -438,19 +436,26 @@ void procesarComando(const String &cmd) {
         return;
     }
 
-    // FP (PWM freq)
-    if (p.equals("FP")) {
-        if (val < 1.0f || val > 10000.0f) {
-            Serial.println("ERROR: FP debe estar entre 1 y 10000 Hz");
+    // Nuevo comando LPM:
+    if (p.equals("LPM")) {
+        // Validación: Rango fisiológico 40 a 220
+        if (val < 40.0f || val > 220.0f) {
+            Serial.println("ERROR: LPM debe estar entre 40 y 220");
             return;
         }
+
         portENTER_CRITICAL(&timerMux);
-            freqPWM = val;
+            // Fórmula: Hz = Latidos / 60 segundos
+            freqPWM = val / 60.0f;
         portEXIT_CRITICAL(&timerMux);
+
         actualizarPWM();
-        Serial.print("OK: Frecuencia PWM = ");
-        Serial.print(val, 1);
-        Serial.println(" Hz");
+
+        Serial.print("OK: LPM configurado a ");
+        Serial.print(val, 0);
+        Serial.print(" (Frecuencia real: ");
+        Serial.print(freqPWM, 3); // 3 decimales para ver precisión
+        Serial.println(" Hz)");
         return;
     }
 
@@ -530,5 +535,5 @@ void procesarComando(const String &cmd) {
     Serial.print("ERROR: Comando desconocido '");
     Serial.print(p);
     Serial.println("'");
-    Serial.println("Comandos válidos: STATE, DC1, DC2, FP, FREQ, AMP, L_FREQ, L_AMP, L_OFF");
+    Serial.println("Comandos válidos: STATE, DC1, DC2, LPM, FREQ, AMP, L_FREQ, L_AMP, L_OFF");
 }
